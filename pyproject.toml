@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-telegram-notify"
+version = "0.1.0"
+description = "MCP server for Telegram notifications, approvals, and remote prompts with VS Code Copilot"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "Nobufumi Murata" },
+]
+keywords = ["mcp", "telegram", "copilot", "notification", "approval"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/NobufumiMurata/mcp-telegram-notify"
+Repository = "https://github.com/NobufumiMurata/mcp-telegram-notify"
+Issues = "https://github.com/NobufumiMurata/mcp-telegram-notify/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_telegram_notify"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
