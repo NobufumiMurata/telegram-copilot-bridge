@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "telegram-notify": {
+      "command": "python",
+      "args": ["-m", "mcp_telegram_notify"],
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "<your-bot-token>",
+        "TELEGRAM_CHAT_ID": "<your-chat-id>",
+        "TELEGRAM_ALLOWED_USERS": "<your-user-id>"
+      }
+    }
+  }
+}
