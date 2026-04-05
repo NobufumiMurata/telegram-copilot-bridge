@@ -261,6 +261,14 @@ class TelegramClient:
                     self._listener_running = False
                 return
 
+            if data.startswith("newcwd:") and self._message_handler:
+                cwd_path = data[len("newcwd:"):]
+                self.answer_callback_query(cb["id"], text="Creating session…")
+                result = self._message_handler(f"/new {cwd_path}")
+                if result == "SESSION_END":
+                    self._listener_running = False
+                return
+
             self.answer_callback_query(cb["id"], text=data)
             self._callback_queue.put(data)
             return

@@ -43,7 +43,6 @@ tests/
 | `telegram_ask_approval` | インラインボタン承認 + 応答待ち | `question: str, options: list[str], timeout_minutes: int = 5` |
 | `telegram_wait_response` | フリーテキスト応答待ち | `prompt: str, timeout_minutes: int = 10` |
 | `telegram_send_file` | ファイル送信 | `file_path: str, caption: str = ""` |
-| `telegram_copilot_hub` | Copilot CLI リモート制御モード | `default_cwd: str, timeout_minutes: int = 60` |
 
 ## セキュリティ要件
 
@@ -53,12 +52,25 @@ tests/
 
 ## 設定 (環境変数)
 
+### MCP サーバー用 (Bot A: 通知・承認)
+
 | 環境変数 | 説明 | 必須 |
 |---------|------|:---:|
 | `TELEGRAM_BOT_TOKEN` | Bot API トークン | ✅ |
 | `TELEGRAM_CHAT_ID` | 通知先チャット ID | ✅ |
 | `TELEGRAM_ALLOWED_USERS` | カンマ区切りの許可ユーザー ID | 推奨 |
-| `TELEGRAM_CONFIG_PATH` | JSON 設定ファイルパス (環境変数未設定時のフォールバック) | ❌ |
+| `TELEGRAM_CONFIG_PATH` | JSON 設定ファイルパス (フォールバック) | ❌ |
+
+### Hub モード用 (Bot B: Copilot リモート制御)
+
+| 環境変数 | 説明 | 必須 |
+|---------|------|:---:|
+| `TELEGRAM_HUB_BOT_TOKEN` | Hub 専用 Bot トークン | ✅ |
+| `TELEGRAM_HUB_CHAT_ID` | Hub 用チャット ID (未設定時は TELEGRAM_CHAT_ID) | ❌ |
+| `TELEGRAM_ALLOWED_USERS` | 共通: 許可ユーザー ID | 推奨 |
+
+**重要**: MCP Bot と Hub Bot は別の Bot Token を使うこと。同じ Token で同時に
+`getUpdates` を呼ぶと 409 Conflict が発生する。
 
 ## 利用者側の MCP 登録例 (.vscode/mcp.json)
 
@@ -121,6 +133,7 @@ MCP サーバーを経由せず、直接 Telegram polling → Copilot CLI (ACP) 
 - Telegram コマンド: /new, /list, /switch, /status, /stop, /done
 - ツール許可: `--allow-tool` ホワイトリスト方式 (--allow-all-tools 禁止)
 - 作業ディレクトリ制限: `COPILOT_ALLOWED_DIRS` で設定可能
+- `/dirs` ルートフォルダ: `COPILOT_DIRS_ROOT` で設定。`/new` 引数なし時にフォルダ選択ボタンを表示
 - **権限リクエスト**: Copilot CLI がツール使用許可を求める `session/request_permission` を
   Telegram インラインボタン (Allow once / Always allow / Deny) で中継。`--autopilot` 時はスキップ。
 

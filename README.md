@@ -154,6 +154,41 @@ copilot                         # then /login to authenticate
 | `COPILOT_CLI_PATH` | Path to copilot executable | `copilot` (from PATH) |
 | `COPILOT_ALLOWED_TOOLS` | Comma-separated tools to allow | `shell(git),read,write` |
 | `COPILOT_ALLOWED_DIRS` | Comma-separated allowed working dirs | (any) |
+| `COPILOT_DIRS_ROOT` | Root directory for `/dirs` and `/new` folder picker | (uses --cwd) |
+
+## Standalone Hub Mode
+
+You can run the Copilot remote-control hub **without MCP**, directly from the command line. This is useful when you want to control Copilot CLI from Telegram without going through VS Code.
+
+```bash
+# Set environment variables
+export TELEGRAM_BOT_TOKEN="<your-bot-token>"
+export TELEGRAM_CHAT_ID="<your-chat-id>"
+export TELEGRAM_ALLOWED_USERS="<your-user-id>"
+
+# Start hub mode
+python -m telegram_copilot_bridge --hub
+
+# With options
+python -m telegram_copilot_bridge --hub \
+  --cwd /path/to/project \
+  --model claude-opus-4.6 \
+  --timeout 120 \
+  -v
+```
+
+> **Note:** Hub mode uses `TELEGRAM_HUB_BOT_TOKEN` if set, otherwise falls back to `TELEGRAM_BOT_TOKEN`. If you run both MCP and Hub simultaneously, use separate Bot tokens to avoid `409 Conflict` errors from concurrent `getUpdates` calls.
+
+**CLI options:**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--hub` | Enable standalone hub mode | *(MCP mode)* |
+| `--cwd <dir>` | Default working directory for sessions | current dir |
+| `--model <name>` | AI model (e.g. `claude-opus-4.6`) | Copilot default |
+| `--timeout <min>` | Hub timeout in minutes (0 = no timeout) | `60` |
+| `--autopilot` | Auto-approve all tool calls | off (manual approval via Telegram) |
+| `-v`, `--verbose` | Enable debug logging | off |
 
 ### Example: Copilot Agent Instructions
 

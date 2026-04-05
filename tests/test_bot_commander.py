@@ -259,3 +259,98 @@ class TestHandleEmpty:
         cmd, mgr, tg = _make_commander()
         result = cmd.handle("   ")
         assert result is None
+
+
+class TestDirsRoot:
+    """Tests for COPILOT_DIRS_ROOT functionality."""
+
+    def test_dirs_uses_dirs_root_when_set(self, tmp_path):
+        """``/dirs`` without args uses dirs_root instead of default_cwd."""
+        (tmp_path / "project-a").mkdir()
+        (tmp_path / "project-b").mkdir()
+        mgr = MagicMock()
+        tg = MagicMock()
+        cmd = BotCommander(session_mgr=mgr, telegram=tg, default_cwd="/other", dirs_root=str(tmp_path))
+
+        cmd.handle("/dirs")
+        msg = tg.send_message.call_args[0][0]
+        assert "project-a" in msg
+        assert "project-b" in msg
+
+    def test_dirs_explicit_arg_overrides_root(self, tmp_path):
+        """``/dirs /some/path`` still uses the explicit arg."""
+        (tmp_path / "sub").mkdir()
+        mgr = MagicMock()
+        tg = MagicMock()
+        cmd = BotCommander(session_mgr=mgr, telegram=tg, default_cwd="/other", dirs_root="/unrelated")
+
+        cmd.handle(f"/dirs {tmp_path}")
+        msg = tg.send_message.call_args[0][0]
+        assert "sub" in msg
+
+
+class TestNewFolderPicker:
+    """Tests for /new inline folder picker."""
+
+    def test_new_shows_folder_picker(self, tmp_path):
+        """/new without args shows inline keyboard when dirs_root is set."""
+        (tmp_path / "alpha").mkdir()
+        (tmp_path / "beta").mkdir()
+        (tmp_path / ".hidden").mkdir()
+        mgr = MagicMock()
+        tg = MagicMock()
+        cmd = BotCommander(session_mgr=mgr, telegram=tg, default_cwd="/other", dirs_root=str(tmp_path))
+
+        cmd.handle("/new")
+        mgr.create_session.assert_not_called()
+        tg.send_inline_keyboard.assert_called_once()
+        text_arg = tg.send_inline_keyboard.call_args[0][0]
+        buttons_arg = tg.send_inline_keyboard.call_args[0][1]
+        assert "Select working directory" in text_arg
+        assert len(buttons_arg) == 2
+        assert buttons_arg[0][0]["callback_data"] == "newcwd:alpha"
+        assert buttons_arg[1][0]["callback_data"] == "newcwd:beta"
+
+    def test_new_no_dirs_root_uses_default(self):
+        """/new without args creates session with default_cwd when no dirs_root."""
+        cmd, mgr, tg = _make_commander()
+        session = Session(id="abc-123", cwd="/tmp", model="m", mode="a")
+        mgr.create_session.return_value = session
+
+        cmd.handle("/new")
+        mgr.create_session.assert_called_once_with("/tmp")
+
+    def test_new_with_arg_bypasses_picker(self, tmp_path):
+        """/new /explicit/path creates session directly even with dirs_root."""
+        mgr = MagicMock()
+        tg = MagicMock()
+        session = Session(id="abc-123", cwd="/explicit", model="m", mode="a")
+        mgr.create_session.return_value = session
+        cmd = BotCommander(session_mgr=mgr, telegram=tg, default_cwd="/other", dirs_root=str(tmp_path))
+
+        cmd.handle("/new /explicit/path")
+        mgr.create_session.assert_called_once_with("/explicit/path")
+        tg.send_inline_keyboard.assert_not_called()
+
+    def test_new_relative_name_resolved_via_dirs_root(self, tmp_path):
+        """A relative folder name from callback is resolved against dirs_root."""
+        (tmp_path / "my-project").mkdir()
+        mgr = MagicMock()
+        tg = MagicMock()
+        session = Session(id="abc-123", cwd=str(tmp_path / "my-project"), model="m", mode="a")
+        mgr.create_session.return_value = session
+        cmd = BotCommander(session_mgr=mgr, telegram=tg, default_cwd="/other", dirs_root=str(tmp_path))
+
+        cmd.handle("/new my-project")
+        call_arg = mgr.create_session.call_args[0][0]
+        assert str(tmp_path / "my-project") in call_arg
+
+    def test_new_empty_dirs_root_dir(self, tmp_path):
+        """/new on dirs_root with no subdirs shows helpful message."""
+        mgr = MagicMock()
+        tg = MagicMock()
+        cmd = BotCommander(session_mgr=mgr, telegram=tg, dirs_root=str(tmp_path))
+
+        cmd.handle("/new")
+        msg = tg.send_message.call_args[0][0]
+        assert "No subdirectories" in msg

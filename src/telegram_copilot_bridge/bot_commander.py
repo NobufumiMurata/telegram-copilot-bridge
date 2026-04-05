@@ -39,10 +39,12 @@ class BotCommander:
         session_mgr: SessionManager,
         telegram: TelegramClient,
         default_cwd: str | None = None,
+        dirs_root: str | None = None,
     ) -> None:
         self._mgr = session_mgr
         self._tg = telegram
         self._default_cwd = default_cwd or os.getcwd()
+        self._dirs_root = dirs_root or ""
         self._prompt_in_progress = False
 
     def get_permission_handler(self) -> Callable[[dict[str, Any]], str]:
@@ -143,7 +145,27 @@ class BotCommander:
         return None
 
     def _cmd_new(self, arg: str) -> str | None:
-        cwd = arg or self._default_cwd
+        # Show folder picker when no arg and dirs_root is configured
+        if not arg and self._dirs_root:
+            return self._show_new_folder_picker()
+
+        cwd = self._resolve_cwd(arg) if arg else self._default_cwd
+        self._create_session(cwd)
+        return None
+
+    def _resolve_cwd(self, arg: str) -> str:
+        """Resolve a cwd argument, checking dirs_root for relative names."""
+        import pathlib
+
+        p = pathlib.Path(arg)
+        if not p.is_absolute() and self._dirs_root:
+            candidate = pathlib.Path(self._dirs_root) / arg
+            if candidate.is_dir():
+                return str(candidate.resolve())
+        return arg
+
+    def _create_session(self, cwd: str) -> None:
+        """Create a new Copilot session in *cwd* and report the result."""
         try:
             session = self._mgr.create_session(cwd)
             self._reply(
@@ -157,6 +179,46 @@ class BotCommander:
             self._reply(f"❌ {e}")
         except Exception as e:
             self._reply(f"❌ Failed to create session:\n<code>{e}</code>")
+
+    def _show_new_folder_picker(self) -> str | None:
+        """Show inline buttons for subdirectories under dirs_root."""
+        import pathlib
+
+        try:
+            root = pathlib.Path(self._dirs_root).resolve()
+            if not root.is_dir():
+                self._reply(f"❌ COPILOT_DIRS_ROOT is not a directory: <code>{html.escape(str(root))}</code>")
+                return None
+
+            dirs = sorted(
+                e for e in root.iterdir()
+                if e.is_dir() and not e.name.startswith(".")
+            )
+            if not dirs:
+                self._reply(
+                    f"📂 <code>{html.escape(str(root))}</code>\n"
+                    "No subdirectories found. Use <code>/new /path/to/dir</code> directly."
+                )
+                return None
+
+            buttons = []
+            for d in dirs[:20]:
+                # Use folder name only (not full path) to stay within
+                # Telegram's 64-byte callback_data limit.
+                buttons.append([
+                    {"text": f"📁 {d.name}", "callback_data": f"newcwd:{d.name}"}
+                ])
+
+            text = (
+                f"📂 <b>Select working directory</b>\n"
+                f"Root: <code>{html.escape(str(root))}</code>"
+            )
+            if len(dirs) > 20:
+                text += f"\n(showing 20 of {len(dirs)} — use <code>/new /path</code> for others)"
+
+            self._tg.send_inline_keyboard(text, buttons)
+        except Exception as e:
+            self._reply(f"❌ Error: <code>{html.escape(str(e))}</code>")
         return None
 
     def _cmd_list(self, _arg: str) -> str | None:
@@ -242,7 +304,7 @@ class BotCommander:
         """List directory contents to help choose a /new target."""
         import pathlib
 
-        target = arg or self._default_cwd
+        target = arg or self._dirs_root or self._default_cwd
         try:
             p = pathlib.Path(target).resolve()
             if not p.is_dir():
