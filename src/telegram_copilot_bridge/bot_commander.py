@@ -260,6 +260,8 @@ class BotCommander:
         try:
             self._reply("⏳ Resuming session…")
             session = self._mgr.resume_session(arg)
+            # Pre-load last response from persisted session
+            self._last_response = self._mgr.get_last_response(session.id)
             self._reply(
                 f"✅ Resumed session <code>{session.id[:8]}</code>\n"
                 f"Model: {session.model}\n"
@@ -373,10 +375,14 @@ class BotCommander:
 
     def _cmd_last(self, _arg: str) -> str | None:
         """Re-send the last Copilot response."""
-        if self._last_response is None:
+        response = self._last_response
+        if response is None:
+            # Fall back to persisted session events
+            response = self._mgr.get_last_response()
+        if response is None:
             self._reply("ℹ️ No previous response yet.")
             return None
-        self._send_long_message(html.escape(self._last_response))
+        self._send_long_message(html.escape(response))
         return None
 
     def _cmd_help(self, _arg: str) -> str | None:

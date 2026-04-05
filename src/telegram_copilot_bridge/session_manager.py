@@ -403,6 +403,46 @@ class SessionManager:
         lines.append("\nUse /switch &lt;id&gt; to change active session.")
         return "\n".join(lines)
 
+    def get_last_response(self, session_id: str | None = None) -> str | None:
+        """Return the last assistant response from a session.
+
+        Reads the session's ``events.jsonl`` (Copilot CLI persisted log)
+        and returns the most recent ``assistant.message`` content, or *None*
+        if nothing is found.
+        """
+        import json as json_mod
+        from pathlib import Path
+
+        sid = session_id or self._active_session_id
+        if not sid:
+            return None
+
+        home = Path.home()
+        events_file = home / ".copilot" / "session-state" / sid / "events.jsonl"
+        if not events_file.is_file():
+            return None
+
+        last_content: str | None = None
+        try:
+            with events_file.open(encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json_mod.loads(line)
+                    except json_mod.JSONDecodeError:
+                        continue
+                    if obj.get("type") == "assistant.message":
+                        content = obj.get("data", {}).get("content", "")
+                        if content:
+                            last_content = content
+        except Exception:
+            logger.exception("Failed to read events.jsonl for session %s", sid[:8] if sid else "?")
+            return None
+
+        return last_content
+
 
 def _find_copilot() -> str:
     """Locate the copilot CLI executable."""

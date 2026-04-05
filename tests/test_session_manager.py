@@ -337,3 +337,39 @@ class TestSessionManager:
         text, sessions = mgr.get_history_data()
         assert "No persisted sessions" in text
         assert sessions == []
+
+    def test_get_last_response_from_events(self, tmp_path):
+        """get_last_response reads the last assistant.message from events.jsonl."""
+        import json as json_mod
+
+        session_id = "test-session-123"
+        session_dir = tmp_path / ".copilot" / "session-state" / session_id
+        session_dir.mkdir(parents=True)
+        events_file = session_dir / "events.jsonl"
+        events_file.write_text(
+            json_mod.dumps({"type": "user.message", "data": {"content": "Hello"}}) + "\n"
+            + json_mod.dumps({"type": "assistant.message", "data": {"content": "First response"}}) + "\n"
+            + json_mod.dumps({"type": "assistant.turn_end", "data": {}}) + "\n"
+            + json_mod.dumps({"type": "assistant.message", "data": {"content": "Second response"}}) + "\n",
+            encoding="utf-8",
+        )
+
+        mgr = SessionManager()
+        mgr._active_session_id = session_id
+
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            result = mgr.get_last_response()
+        assert result == "Second response"
+
+    def test_get_last_response_no_events(self):
+        """get_last_response returns None when no events.jsonl exists."""
+        mgr = SessionManager()
+        mgr._active_session_id = "nonexistent-session"
+        result = mgr.get_last_response()
+        assert result is None
+
+    def test_get_last_response_no_session(self):
+        """get_last_response returns None when no active session."""
+        mgr = SessionManager()
+        result = mgr.get_last_response()
+        assert result is None

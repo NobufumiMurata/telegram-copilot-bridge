@@ -188,6 +188,7 @@ class TestHistoryResume:
 class TestLastCommand:
     def test_last_no_response(self):
         cmd, mgr, tg = _make_commander()
+        mgr.get_last_response.return_value = None
         cmd.handle("/last")
         msg = tg.send_message.call_args[0][0]
         assert "No previous response" in msg
