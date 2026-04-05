@@ -1,6 +1,6 @@
 """Configuration management for telegram-copilot-bridge.
 
-Priority: environment variables > JSON config file.
+Priority: environment variables > .env file > JSON config file.
 """
 
 from __future__ import annotations
@@ -24,8 +24,53 @@ class Config:
             raise ValueError("TELEGRAM_CHAT_ID is required")
 
 
+def load_dotenv(env_file: str | Path | None = None) -> None:
+    """Load a .env file into ``os.environ``, skipping already-set variables.
+
+    Supported syntax::
+
+        KEY=value
+        KEY="value with spaces"
+        KEY='value'
+        export KEY=value   # shell-style (export keyword is stripped)
+        # comment lines are ignored
+
+    Args:
+        env_file: Path to the .env file.  If *None*, checks ``TELEGRAM_ENV_FILE``
+                  env var, then falls back to ``.env`` in the current directory.
+    """
+    if env_file is None:
+        explicit = os.environ.get("TELEGRAM_ENV_FILE", "")
+        env_file = Path(explicit) if explicit else Path(".env")
+
+    env_path = Path(env_file)
+    if not env_path.is_file():
+        return
+
+    with env_path.open(encoding="utf-8") as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Strip leading "export " (shell syntax)
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            # Strip surrounding quotes
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            # Env vars already set in the environment take priority
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
 def load_config(config_path: str | None = None) -> Config:
     """Load configuration from environment variables, falling back to JSON file."""
+    load_dotenv()
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     allowed_users_str = os.environ.get("TELEGRAM_ALLOWED_USERS", "")
@@ -40,6 +85,27 @@ def load_config(config_path: str | None = None) -> Config:
             chat_id = chat_id or data.get("chat_id", "")
             if not allowed_users:
                 allowed_users = data.get("allowed_users", [])
+
+    config = Config(
+        bot_token=bot_token,
+        chat_id=chat_id,
+        allowed_users=allowed_users,
+    )
+    config.validate()
+    return config
+
+
+def load_hub_config() -> Config:
+    """Load Hub-specific configuration.
+
+    Uses TELEGRAM_HUB_BOT_TOKEN / TELEGRAM_HUB_CHAT_ID if set,
+    otherwise falls back to the standard TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
+    """
+    load_dotenv()
+    bot_token = os.environ.get("TELEGRAM_HUB_BOT_TOKEN", "") or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_HUB_CHAT_ID", "") or os.environ.get("TELEGRAM_CHAT_ID", "")
+    allowed_users_str = os.environ.get("TELEGRAM_ALLOWED_USERS", "")
+    allowed_users = [u.strip() for u in allowed_users_str.split(",") if u.strip()]
 
     config = Config(
         bot_token=bot_token,

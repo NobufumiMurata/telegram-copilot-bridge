@@ -57,7 +57,34 @@ From the response, note:
 - `"chat": {"id": ...}` → your **Chat ID**
 - `"from": {"id": ...}` → your **User ID** (for the allowlist)
 
-### 3. Configure VS Code MCP
+### 3. Configure
+
+#### Option A — `.env` file (recommended for hub/standalone mode)
+
+Copy the example file and edit it:
+
+```bash
+cp .env.example .env
+```
+
+```ini
+# .env
+TELEGRAM_BOT_TOKEN=1234567890:AAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+TELEGRAM_CHAT_ID=-100000000000
+TELEGRAM_ALLOWED_USERS=123456789
+
+# Hub mode: separate Bot to avoid 409 Conflict with MCP server
+TELEGRAM_HUB_BOT_TOKEN=0987654321:BBXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+# Root folder shown in /dirs and /new folder picker
+COPILOT_DIRS_ROOT=/home/user/projects
+```
+
+The `.env` file is loaded automatically on startup (from the current directory).
+Use `TELEGRAM_ENV_FILE=/path/to/.env` to point to a different location.
+Environment variables set in the shell always take priority over `.env`.
+
+#### Option B — VS Code `mcp.json` (recommended for MCP server mode)
 
 Add to your `.vscode/mcp.json`:
 
@@ -77,9 +104,7 @@ Add to your `.vscode/mcp.json`:
 }
 ```
 
-### Alternative: JSON Config File
-
-Instead of environment variables, you can use a JSON config file:
+#### Option C — JSON config file
 
 ```json
 {
@@ -89,20 +114,10 @@ Instead of environment variables, you can use a JSON config file:
 }
 ```
 
-Then set `TELEGRAM_CONFIG_PATH` to point to the file:
+Set `TELEGRAM_CONFIG_PATH` (or add to `.env`) to point to the file:
 
-```json
-{
-  "servers": {
-    "telegram-copilot-bridge": {
-      "command": "python",
-      "args": ["-m", "telegram_copilot_bridge"],
-      "env": {
-        "TELEGRAM_CONFIG_PATH": "secrets/telegram-bot.json"
-      }
-    }
-  }
-}
+```ini
+TELEGRAM_CONFIG_PATH=secrets/telegram-bot.json
 ```
 
 ## MCP Tools
@@ -147,24 +162,38 @@ winget install GitHub.Copilot   # or: npm install -g @github/copilot
 copilot                         # then /login to authenticate
 ```
 
-**Environment variables for hub mode:**
+**Environment variables (all modes):**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TELEGRAM_ENV_FILE` | Path to the `.env` file | `.env` in CWD |
+| `TELEGRAM_BOT_TOKEN` | Bot token (MCP server) | *(required)* |
+| `TELEGRAM_CHAT_ID` | Target chat ID | *(required)* |
+| `TELEGRAM_ALLOWED_USERS` | Comma-separated allowed user IDs | *(allow all)* |
+| `TELEGRAM_HUB_BOT_TOKEN` | Bot token for hub mode (separate from MCP) | fallback to `TELEGRAM_BOT_TOKEN` |
+| `TELEGRAM_HUB_CHAT_ID` | Chat ID for hub mode | fallback to `TELEGRAM_CHAT_ID` |
+| `TELEGRAM_CONFIG_PATH` | JSON credential file (MCP server only) | — |
+
+**Copilot hub variables:**
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `COPILOT_CLI_PATH` | Path to copilot executable | `copilot` (from PATH) |
-| `COPILOT_ALLOWED_TOOLS` | Comma-separated tools to allow | `shell(git),read,write` |
-| `COPILOT_ALLOWED_DIRS` | Comma-separated allowed working dirs | (any) |
+| `COPILOT_MODEL` | Default AI model | Copilot default |
+| `COPILOT_AUTOPILOT` | Auto-approve tool calls (`true`/`false`) | `false` |
 | `COPILOT_DIRS_ROOT` | Root directory for `/dirs` and `/new` folder picker | (uses --cwd) |
+| `COPILOT_ALLOWED_DIRS` | Comma-separated allowed working dirs | (any) |
+| `COPILOT_ALLOWED_TOOLS` | Comma-separated tools to allow | `shell(git),read,write` |
+| `HUB_LOCK_PORT` | TCP port for Hub singleton lock | `47732` |
 
 ## Standalone Hub Mode
 
 You can run the Copilot remote-control hub **without MCP**, directly from the command line. This is useful when you want to control Copilot CLI from Telegram without going through VS Code.
 
 ```bash
-# Set environment variables
-export TELEGRAM_BOT_TOKEN="<your-bot-token>"
-export TELEGRAM_CHAT_ID="<your-chat-id>"
-export TELEGRAM_ALLOWED_USERS="<your-user-id>"
+# Copy and edit the .env file
+cp .env.example .env
+# (fill in TELEGRAM_HUB_BOT_TOKEN, TELEGRAM_CHAT_ID, etc.)
 
 # Start hub mode
 python -m telegram_copilot_bridge --hub
