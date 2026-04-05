@@ -24,15 +24,9 @@ Control [GitHub Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/
 ## Installation
 
 ```bash
-pip install telegram-copilot-bridge
-```
-
-Or install from source:
-
-```bash
 git clone https://github.com/NobufumiMurata/telegram-copilot-bridge.git
 cd telegram-copilot-bridge
-pip install -e ".[dev]"
+pip install -e .
 ```
 
 **Prerequisites:** Install [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli) and authenticate:
@@ -164,15 +158,6 @@ All variables can be set in `.env` or in the shell. Shell values take priority.
 - **Tool allowlist**: Uses `--allow-tool` (not `--allow-all-tools`) to restrict what Copilot CLI can do.
 - **Directory restrictions**: Restrict which directories Copilot sessions can operate in via `COPILOT_ALLOWED_DIRS`.
 - **Singleton lock**: Only one instance can run per machine (TCP port lock).
-
-## Development
-
-```bash
-git clone https://github.com/NobufumiMurata/telegram-copilot-bridge.git
-cd telegram-copilot-bridge
-pip install -e ".[dev]"
-pytest
-```
 
 ## License
 
