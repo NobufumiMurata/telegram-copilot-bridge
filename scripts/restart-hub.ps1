@@ -124,9 +124,9 @@ if ($LockHolder) {
     Stop-Process -Id $pid_to_kill -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
 } else {
-    # Method 2: Fallback - find by command line
+    # Method 2: Fallback - find by command line (no --hub flag in newer versions)
     $HubPIDs = Get-CimInstance Win32_Process -Filter "Name LIKE 'python%'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*telegram_copilot_bridge*--hub*" } |
+        Where-Object { $_.CommandLine -like "*telegram_copilot_bridge*" -and $_.CommandLine -notlike "*restart-hub*" } |
         Select-Object -ExpandProperty ProcessId
     if ($HubPIDs) {
         $HubPIDs | ForEach-Object {
@@ -140,7 +140,7 @@ if ($LockHolder) {
 }
 
 # --- [4/4] Start Hub ------------------------------------------------------
-$HubArgs = @("-m", "telegram_copilot_bridge", "--hub")
+$HubArgs = @("-m", "telegram_copilot_bridge")
 $HubArgs += @("--model", $Model)
 if ($Autopilot) { $HubArgs += "--autopilot" }
 if ($Cwd)       { $HubArgs += @("--cwd", $Cwd) }

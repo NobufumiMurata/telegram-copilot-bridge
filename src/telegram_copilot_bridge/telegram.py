@@ -103,16 +103,19 @@ class TelegramClient:
             data["text"] = text
         return self._call("answerCallbackQuery", data)
 
-    def set_my_commands(self, commands: list[dict[str, str]]) -> dict[str, Any]:
+    def set_my_commands(
+        self, commands: list[dict[str, str]], language_code: str = ""
+    ) -> dict[str, Any]:
         """Register bot commands for the Telegram command menu.
 
         Args:
             commands: List of dicts with 'command' and 'description' keys.
+            language_code: IETF language tag (e.g. 'ja', 'en'). Empty for default.
         """
-        return self._call(
-            "setMyCommands",
-            {"commands": json.dumps(commands)},
-        )
+        data: dict[str, Any] = {"commands": json.dumps(commands)}
+        if language_code:
+            data["language_code"] = language_code
+        return self._call("setMyCommands", data)
 
     # ------------------------------------------------------------------
     # Receive methods (long-polling)

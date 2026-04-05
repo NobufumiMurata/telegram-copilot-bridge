@@ -145,22 +145,39 @@ def _run_hub_locked(
     commander._mgr = mgr
 
     # Register bot commands for Telegram command menu
+    _BOT_COMMANDS_EN = [
+        {"command": "new", "description": "Start a new Copilot session"},
+        {"command": "history", "description": "List past sessions"},
+        {"command": "resume", "description": "Resume a past session"},
+        {"command": "dirs", "description": "Browse directories"},
+        {"command": "model", "description": "Show/change AI model"},
+        {"command": "mode", "description": "Toggle autopilot/manual"},
+        {"command": "list", "description": "List active sessions"},
+        {"command": "switch", "description": "Switch active session"},
+        {"command": "status", "description": "Session status"},
+        {"command": "stop", "description": "Stop a session"},
+        {"command": "last", "description": "Show last response"},
+        {"command": "done", "description": "Stop all & exit"},
+        {"command": "help", "description": "Show help"},
+    ]
+    _BOT_COMMANDS_JA = [
+        {"command": "new", "description": "新しい Copilot セッション"},
+        {"command": "history", "description": "過去のセッション一覧"},
+        {"command": "resume", "description": "過去のセッションを再開"},
+        {"command": "dirs", "description": "ディレクトリ閲覧"},
+        {"command": "model", "description": "AI モデルの表示/変更"},
+        {"command": "mode", "description": "autopilot/manual 切替"},
+        {"command": "list", "description": "アクティブセッション一覧"},
+        {"command": "switch", "description": "セッション切替"},
+        {"command": "status", "description": "セッション状態"},
+        {"command": "stop", "description": "セッション停止"},
+        {"command": "last", "description": "最後の応答を再表示"},
+        {"command": "done", "description": "全停止・終了"},
+        {"command": "help", "description": "ヘルプ表示"},
+    ]
     try:
-        client.set_my_commands([
-            {"command": "new", "description": "新しい Copilot セッション"},
-            {"command": "history", "description": "過去のセッション一覧"},
-            {"command": "resume", "description": "過去のセッションを再開"},
-            {"command": "dirs", "description": "ディレクトリ閲覧"},
-            {"command": "model", "description": "AI モデルの表示/変更"},
-            {"command": "mode", "description": "autopilot/manual 切替"},
-            {"command": "list", "description": "アクティブセッション一覧"},
-            {"command": "switch", "description": "セッション切替"},
-            {"command": "status", "description": "セッション状態"},
-            {"command": "stop", "description": "セッション停止"},
-            {"command": "last", "description": "最後の応答を再表示"},
-            {"command": "done", "description": "全停止・終了"},
-            {"command": "help", "description": "ヘルプ表示"},
-        ])
+        client.set_my_commands(_BOT_COMMANDS_EN)          # default (all users)
+        client.set_my_commands(_BOT_COMMANDS_JA, "ja")    # Japanese users
     except Exception:
         logger.warning("Failed to register bot commands", exc_info=True)
 
