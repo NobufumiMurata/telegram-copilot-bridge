@@ -52,6 +52,7 @@ class PromptResult:
     text: str
     stop_reason: str
     raw_chunks: list[dict[str, Any]] = field(default_factory=list)
+    last_turn_text: str = ""
 
 
 class CopilotProcess:
@@ -351,20 +352,29 @@ class CopilotProcess:
         """
         chunks: list[str] = []
         raw_chunks: list[dict[str, Any]] = []
+        # Track the last turn's text separately so callers can skip
+        # intermediate narration (tool planning, reading files, etc.).
+        last_turn_chunks: list[str] = []
 
         def _handle_notification(msg: dict[str, Any]) -> None:
             params = msg.get("params", {})
             if params.get("sessionId") != session_id:
                 return
             update = params.get("update", {})
-            if update.get("sessionUpdate") == "agent_message_chunk":
+            update_type = update.get("sessionUpdate", "")
+            if update_type == "agent_message_chunk":
                 content = update.get("content", {})
                 if content.get("type") == "text":
                     text_chunk = content["text"]
                     chunks.append(text_chunk)
+                    last_turn_chunks.append(text_chunk)
                     raw_chunks.append(update)
                     if on_chunk:
                         on_chunk(text_chunk)
+            elif update_type and update_type != "agent_message_chunk":
+                # Non-text update (tool_call, confirmation, etc.) marks a
+                # turn boundary — the next text chunks belong to a new turn.
+                last_turn_chunks.clear()
 
         prev_handler = self._on_notification
         self._on_notification = _handle_notification
@@ -384,10 +394,13 @@ class CopilotProcess:
             raise RuntimeError(f"ACP session/prompt failed: {resp.error}")
 
         result = resp.result or {}
+        full_text = "".join(chunks)
+        last_turn = "".join(last_turn_chunks)
         return PromptResult(
-            text="".join(chunks),
+            text=full_text,
             stop_reason=result.get("stopReason", "unknown"),
             raw_chunks=raw_chunks,
+            last_turn_text=last_turn if last_turn != full_text else full_text,
         )
 
     def list_sessions(self) -> list[dict[str, Any]]:

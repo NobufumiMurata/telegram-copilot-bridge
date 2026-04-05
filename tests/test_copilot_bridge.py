@@ -137,8 +137,63 @@ class TestCopilotProcess:
             "sess-1", "Say hello", on_chunk=collected_chunks.append
         )
         assert result.text == "Hello World!"
+        assert result.last_turn_text == "Hello World!"
         assert result.stop_reason == "end_turn"
         assert collected_chunks == ["Hello ", "World!"]
+
+    def test_prompt_last_turn_text_after_tool_call(self):
+        """last_turn_text should contain only text after the last tool_call."""
+        proc = self._make_process()
+        proc._running = True
+        mock_popen = MagicMock()
+        mock_popen.poll.return_value = None
+        proc._proc = mock_popen
+
+        def fake_request(method, params, timeout=300.0):
+            handler = proc._on_notification
+            if handler:
+                # First turn: planning text
+                handler({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "sess-1",
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {"type": "text", "text": "Let me read the file..."},
+                        },
+                    },
+                })
+                # Tool call boundary
+                handler({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "sess-1",
+                        "update": {
+                            "sessionUpdate": "tool_call",
+                            "toolCall": {"title": "Read file"},
+                        },
+                    },
+                })
+                # Final turn: actual answer
+                handler({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "sess-1",
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {"type": "text", "text": "Here is the answer."},
+                        },
+                    },
+                })
+            return ACPResponse(id=3, result={"stopReason": "end_turn"})
+
+        proc._request = fake_request
+        result = proc.prompt("sess-1", "Explain the code")
+        assert result.text == "Let me read the file...Here is the answer."
+        assert result.last_turn_text == "Here is the answer."
 
     def test_prompt_ignores_other_sessions(self):
         proc = self._make_process()

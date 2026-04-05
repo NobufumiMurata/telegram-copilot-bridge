@@ -479,7 +479,7 @@ class BotCommander:
         try:
             while True:
                 result = self._mgr.send_prompt(text, timeout=self._prompt_timeout)
-                response_text = result.text or "(empty response)"
+                response_text = result.last_turn_text or result.text or "(empty response)"
                 self._last_response = response_text
 
                 if result.stop_reason == "ask_user":

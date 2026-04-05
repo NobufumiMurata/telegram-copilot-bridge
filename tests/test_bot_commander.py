@@ -204,7 +204,7 @@ class TestLastCommand:
         cmd, mgr, tg = _make_commander()
         session = Session(id="abc", cwd="/tmp", model="m", mode="a")
         type(mgr).active_session = PropertyMock(return_value=session)
-        mgr.send_prompt.return_value = MagicMock(text="Here is the fix.")
+        mgr.send_prompt.return_value = MagicMock(text="Here is the fix.", last_turn_text="Here is the fix.")
 
         cmd.handle("Fix the bug")
         _wait_prompt_done(cmd)
@@ -236,7 +236,7 @@ class TestHandlePrompt:
         cmd, mgr, tg = _make_commander()
         session = Session(id="abc", cwd="/tmp", model="m", mode="a")
         type(mgr).active_session = PropertyMock(return_value=session)
-        mgr.send_prompt.return_value = MagicMock(text="Done! Fixed the bug.")
+        mgr.send_prompt.return_value = MagicMock(text="Done! Fixed the bug.", last_turn_text="Done! Fixed the bug.")
 
         cmd.handle("Fix the bug")
         _wait_prompt_done(cmd)
@@ -279,8 +279,8 @@ class TestAskUser:
 
         # First call returns ask_user, second returns normal
         mgr.send_prompt.side_effect = [
-            MagicMock(text="Which file?", stop_reason="ask_user"),
-            MagicMock(text="Done!", stop_reason="end_turn"),
+            MagicMock(text="Which file?", last_turn_text="Which file?", stop_reason="ask_user"),
+            MagicMock(text="Done!", last_turn_text="Done!", stop_reason="end_turn"),
         ]
 
         cmd.handle("Fix the bug")
@@ -362,8 +362,8 @@ class TestAskUser:
         type(mgr).active_session = PropertyMock(return_value=session)
 
         mgr.send_prompt.side_effect = [
-            MagicMock(text="Which file?", stop_reason="ask_user"),
-            MagicMock(text="All fixed!", stop_reason="end_turn"),
+            MagicMock(text="Which file?", last_turn_text="Which file?", stop_reason="ask_user"),
+            MagicMock(text="All fixed!", last_turn_text="All fixed!", stop_reason="end_turn"),
         ]
 
         cmd.handle("Fix the bug")
