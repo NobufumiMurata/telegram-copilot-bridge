@@ -1,8 +1,6 @@
 """Entry point for ``python -m telegram_copilot_bridge``.
 
-Modes:
-    (default)   Start as MCP stdio server.
-    --hub       Start standalone Copilot remote-control hub (no MCP).
+Starts the Copilot remote-control hub (Telegram → Copilot CLI via ACP).
 """
 
 from __future__ import annotations
@@ -15,23 +13,18 @@ import sys
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="telegram_copilot_bridge",
-        description="Telegram ↔ Copilot bridge",
-    )
-    parser.add_argument(
-        "--hub",
-        action="store_true",
-        help="Run standalone Copilot remote-control hub (Telegram → Copilot CLI).",
+        description="Telegram → Copilot CLI remote-control bridge",
     )
     parser.add_argument(
         "--cwd",
         default="",
-        help="Default working directory for Copilot sessions (hub mode).",
+        help="Default working directory for Copilot sessions.",
     )
     parser.add_argument(
         "--timeout",
         type=int,
-        default=60,
-        help="Hub timeout in minutes (default: 60).",
+        default=0,
+        help="Hub timeout in minutes (0 = no timeout, default: 0).",
     )
     parser.add_argument(
         "--model",
@@ -53,20 +46,19 @@ def main() -> None:
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
 
-    if args.hub:
-        from .hub import run_hub
+    from .hub import run_hub
 
+    try:
         result = run_hub(
             default_cwd=args.cwd,
             timeout_minutes=args.timeout,
             model=args.model or None,
             autopilot=args.autopilot,
         )
-        print(result)
-    else:
-        from .server import mcp
-
-        mcp.run()
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(result)
 
 
 main()

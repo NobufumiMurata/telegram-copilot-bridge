@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "telegram-copilot-bridge"
 version = "0.1.0"
-description = "MCP server for Telegram notifications, approvals, and remote prompts with VS Code Copilot"
+description = "Telegram remote-control bridge for GitHub Copilot CLI via ACP"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -21,7 +21,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "mcp>=1.0.0",
     "requests>=2.28.0",
 ]
 

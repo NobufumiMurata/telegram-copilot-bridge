@@ -69,7 +69,10 @@ def load_dotenv(env_file: str | Path | None = None) -> None:
 
 
 def load_config(config_path: str | None = None) -> Config:
-    """Load configuration from environment variables, falling back to JSON file."""
+    """Load configuration from environment variables, falling back to JSON file.
+
+    Reads ``.env`` automatically before checking ``os.environ``.
+    """
     load_dotenv()
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -77,35 +80,16 @@ def load_config(config_path: str | None = None) -> Config:
     allowed_users = [u.strip() for u in allowed_users_str.split(",") if u.strip()]
 
     # Fall back to JSON config file if env vars are not set
-    if not bot_token and config_path:
-        path = Path(config_path)
-        if path.is_file():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            bot_token = bot_token or data.get("bot_token", "")
-            chat_id = chat_id or data.get("chat_id", "")
-            if not allowed_users:
-                allowed_users = data.get("allowed_users", [])
-
-    config = Config(
-        bot_token=bot_token,
-        chat_id=chat_id,
-        allowed_users=allowed_users,
-    )
-    config.validate()
-    return config
-
-
-def load_hub_config() -> Config:
-    """Load Hub-specific configuration.
-
-    Uses TELEGRAM_HUB_BOT_TOKEN / TELEGRAM_HUB_CHAT_ID if set,
-    otherwise falls back to the standard TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
-    """
-    load_dotenv()
-    bot_token = os.environ.get("TELEGRAM_HUB_BOT_TOKEN", "") or os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_HUB_CHAT_ID", "") or os.environ.get("TELEGRAM_CHAT_ID", "")
-    allowed_users_str = os.environ.get("TELEGRAM_ALLOWED_USERS", "")
-    allowed_users = [u.strip() for u in allowed_users_str.split(",") if u.strip()]
+    if not bot_token:
+        json_path = config_path or os.environ.get("TELEGRAM_CONFIG_PATH", "")
+        if json_path:
+            path = Path(json_path)
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                bot_token = bot_token or data.get("bot_token", "")
+                chat_id = chat_id or data.get("chat_id", "")
+                if not allowed_users:
+                    allowed_users = data.get("allowed_users", [])
 
     config = Config(
         bot_token=bot_token,

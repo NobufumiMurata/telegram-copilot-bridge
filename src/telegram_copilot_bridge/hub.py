@@ -1,8 +1,6 @@
-"""Standalone Copilot Remote Control Hub.
+"""Copilot Remote Control Hub.
 
-Runs the Telegram → Copilot CLI (ACP) bridge without depending on MCP.
-Uses its own Bot token (TELEGRAM_HUB_BOT_TOKEN) to avoid conflicts
-with the MCP notification Bot.
+Bridges Telegram Bot API with Copilot CLI via ACP (Agent Client Protocol).
 """
 
 from __future__ import annotations
@@ -13,7 +11,7 @@ import socket
 import time
 
 from .bot_commander import BotCommander
-from .config import load_hub_config
+from .config import load_config
 from .session_manager import SessionManager
 from .telegram import TelegramClient
 
@@ -84,7 +82,7 @@ def _run_hub_locked(
     model: str | None,
     autopilot: bool,
 ) -> str:
-    cfg = load_hub_config()
+    cfg = load_config()
     client = TelegramClient(
         bot_token=cfg.bot_token,
         chat_id=cfg.chat_id,
