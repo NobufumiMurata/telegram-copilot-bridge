@@ -159,6 +159,14 @@ All variables can be set in `.env` or in the shell. Shell values take priority.
 - **Directory restrictions**: Restrict which directories Copilot sessions can operate in via `COPILOT_ALLOWED_DIRS`.
 - **Singleton lock**: Only one instance can run per machine (TCP port lock).
 
+## Limitations
+
+- **VS Code ローカル実行は監視不可** — VS Code 上の Copilot が何をしているかを取得する手段はありません。MCP ツールは VS Code → Bridge の一方向呼び出しのみです。
+- **Bridge 外で起動した CLI のステータスは取得不可** — サーバー上で直接 `copilot` を起動した場合、リアルタイムの実行状況は取れません。`/status` の Activity 表示（`events.jsonl` の更新時刻による推定）が代替手段です。
+- **Bridge 外で起動した CLI の承認リクエストは中継不可** — Hub 経由で起動したセッションのみ、ツール承認を Telegram インラインボタンで中継できます。
+- **シングルインスタンス制限** — Hub は 1 マシンにつき 1 プロセスのみ（TCP ポートロック）。
+- **Telegram メッセージ長制限** — 4000 文字を超える応答は自動分割されます。
+
 ## License
 
 MIT
