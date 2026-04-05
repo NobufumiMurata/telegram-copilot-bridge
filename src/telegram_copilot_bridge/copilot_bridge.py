@@ -94,7 +94,9 @@ class CopilotProcess:
         if self._proc is not None:
             return
 
-        cmd = [self._cmd, "--acp", "--no-ask-user"]
+        cmd = [self._cmd, "--acp"]
+        if self._autopilot:
+            cmd.append("--no-ask-user")
         for tool in self._allowed_tools:
             cmd.extend(["--allow-tool", tool])
         if self._model:
@@ -395,10 +397,27 @@ class CopilotProcess:
             raise RuntimeError(f"ACP session/list failed: {resp.error}")
         return (resp.result or {}).get("sessions", [])
 
-    def load_session(self, session_id: str) -> dict[str, Any]:
-        """Reload a previous session."""
+    def load_session(
+        self,
+        session_id: str,
+        cwd: str,
+        mcp_servers: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Reload a previous session.
+
+        Args:
+            session_id: The session ID to reload.
+            cwd: Working directory (required by ACP).
+            mcp_servers: Optional MCP server configurations.
+        """
         resp = self._request(
-            "session/load", {"sessionId": session_id}, timeout=15.0
+            "session/load",
+            {
+                "sessionId": session_id,
+                "cwd": cwd,
+                "mcpServers": mcp_servers or [],
+            },
+            timeout=15.0,
         )
         if not resp.ok:
             raise RuntimeError(f"ACP session/load failed: {resp.error}")

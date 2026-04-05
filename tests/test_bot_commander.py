@@ -268,6 +268,116 @@ class TestHandlePrompt:
         assert "process died" in last_msg
 
 
+class TestAskUser:
+    """Tests for ask_user stop-reason handling."""
+
+    def test_ask_user_relays_question_and_continues(self):
+        """Copilot asks a question, user replies, Copilot finishes."""
+        cmd, mgr, tg = _make_commander()
+        session = Session(id="abc", cwd="/tmp", model="m", mode="a")
+        type(mgr).active_session = PropertyMock(return_value=session)
+
+        # First call returns ask_user, second returns normal
+        mgr.send_prompt.side_effect = [
+            MagicMock(text="Which file?", stop_reason="ask_user"),
+            MagicMock(text="Done!", stop_reason="end_turn"),
+        ]
+
+        cmd.handle("Fix the bug")
+
+        # Wait for ask_user state
+        deadline = time.time() + 2
+        while not cmd._waiting_for_user_input and time.time() < deadline:
+            time.sleep(0.05)
+        assert cmd._waiting_for_user_input
+
+        # Send user response (routed to input queue)
+        cmd.handle("main.py")
+
+        _wait_prompt_done(cmd)
+
+        # Should have called send_prompt twice
+        assert mgr.send_prompt.call_count == 2
+        assert mgr.send_prompt.call_args_list[1][0][0] == "main.py"
+
+        # Messages: Processing, question, waiting indicator, Processing, result
+        msgs = [c[0][0] for c in tg.send_message.call_args_list]
+        assert any("Which file?" in m for m in msgs)
+        assert any("waiting for your input" in m for m in msgs)
+        assert any("Done!" in m for m in msgs)
+
+    def test_ask_user_timeout(self):
+        """User doesn't respond — times out gracefully."""
+        cmd, mgr, tg = _make_commander()
+        session = Session(id="abc", cwd="/tmp", model="m", mode="a")
+        type(mgr).active_session = PropertyMock(return_value=session)
+        mgr.send_prompt.return_value = MagicMock(
+            text="Which file?", stop_reason="ask_user"
+        )
+
+        cmd.handle("Fix the bug")
+
+        # Wait for ask_user state
+        deadline = time.time() + 2
+        while not cmd._waiting_for_user_input and time.time() < deadline:
+            time.sleep(0.05)
+        assert cmd._waiting_for_user_input
+
+        # Simulate session being stopped (causes _wait_for_user_input to return None)
+        type(mgr).active_session = PropertyMock(return_value=None)
+
+        _wait_prompt_done(cmd, timeout=10)
+
+        msgs = [c[0][0] for c in tg.send_message.call_args_list]
+        assert any("timed out" in m.lower() for m in msgs)
+
+    def test_ask_user_commands_still_work(self):
+        """Commands like /status work while waiting for user input."""
+        cmd, mgr, tg = _make_commander()
+        session = Session(id="abc", cwd="/tmp", model="m", mode="a")
+        type(mgr).active_session = PropertyMock(return_value=session)
+        mgr.send_prompt.return_value = MagicMock(
+            text="Which file?", stop_reason="ask_user"
+        )
+        mgr.get_status.return_value = "🤖 Session status"
+
+        cmd.handle("Fix the bug")
+
+        deadline = time.time() + 2
+        while not cmd._waiting_for_user_input and time.time() < deadline:
+            time.sleep(0.05)
+
+        # Commands should still be dispatched normally
+        cmd.handle("/status")
+        mgr.get_status.assert_called_once()
+
+        # Clean up: stop the session so the wait loop exits
+        type(mgr).active_session = PropertyMock(return_value=None)
+        _wait_prompt_done(cmd, timeout=10)
+
+    def test_ask_user_stores_last_response(self):
+        """_last_response is updated after ask_user question."""
+        cmd, mgr, tg = _make_commander()
+        session = Session(id="abc", cwd="/tmp", model="m", mode="a")
+        type(mgr).active_session = PropertyMock(return_value=session)
+
+        mgr.send_prompt.side_effect = [
+            MagicMock(text="Which file?", stop_reason="ask_user"),
+            MagicMock(text="All fixed!", stop_reason="end_turn"),
+        ]
+
+        cmd.handle("Fix the bug")
+
+        deadline = time.time() + 2
+        while not cmd._waiting_for_user_input and time.time() < deadline:
+            time.sleep(0.05)
+
+        cmd.handle("main.py")
+        _wait_prompt_done(cmd)
+
+        assert cmd._last_response == "All fixed!"
+
+
 class TestLongMessage:
     def test_short_message_not_split(self):
         cmd, mgr, tg = _make_commander()

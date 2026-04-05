@@ -15,7 +15,9 @@ from __future__ import annotations
 import html
 import logging
 import os
+import queue
 import threading
+import time
 from typing import Any, Callable
 
 from .session_manager import SessionManager, SessionState
@@ -46,6 +48,8 @@ class BotCommander:
         self._default_cwd = default_cwd or os.getcwd()
         self._dirs_root = dirs_root or ""
         self._last_response: str | None = None
+        self._waiting_for_user_input = False
+        self._user_input_queue: queue.Queue[str] = queue.Queue()
 
     def get_permission_handler(self) -> Callable[[dict[str, Any]], str]:
         """Return a permission handler that uses Telegram inline buttons."""
@@ -416,6 +420,11 @@ class BotCommander:
     # ------------------------------------------------------------------
 
     def _handle_prompt(self, text: str) -> str | None:
+        # Route text to input queue when Copilot is waiting for user input
+        if self._waiting_for_user_input:
+            self._user_input_queue.put(text)
+            return None
+
         if not self._mgr.active_session:
             self._reply(
                 "⚠️ No active session.\n"
@@ -436,19 +445,61 @@ class BotCommander:
         return None
 
     def _run_prompt(self, text: str) -> None:
-        """Execute a Copilot prompt in a background thread."""
+        """Execute a Copilot prompt in a background thread.
+
+        Handles ``ask_user`` stop-reason by relaying the question to
+        Telegram, waiting for user input, and looping back.
+        """
         try:
-            result = self._mgr.send_prompt(text, timeout=300.0)
-            response_text = result.text or "(empty response)"
-            self._last_response = response_text
-            # Copilot returns Markdown — escape HTML entities so Telegram
-            # doesn't choke on unmatched < > & characters.
-            self._send_long_message(html.escape(response_text))
+            while True:
+                result = self._mgr.send_prompt(text, timeout=300.0)
+                response_text = result.text or "(empty response)"
+                self._last_response = response_text
+
+                if result.stop_reason == "ask_user":
+                    self._send_long_message(html.escape(response_text))
+                    self._reply("⌨️ Copilot is waiting for your input.")
+
+                    user_input = self._wait_for_user_input(timeout=300)
+                    if user_input is None:
+                        self._reply("⏰ Input timed out.")
+                        break
+
+                    self._reply("⏳ Processing…")
+                    text = user_input
+                    continue
+
+                # Normal completion
+                self._send_long_message(html.escape(response_text))
+                break
         except TimeoutError:
             self._reply("⏰ Copilot response timed out after 5 minutes.")
         except Exception as e:
             logger.exception("Prompt execution failed")
             self._reply(f"❌ Error:\n<pre>{html.escape(str(e))}</pre>")
+
+    def _wait_for_user_input(self, timeout: int = 300) -> str | None:
+        """Block until the user sends text or timeout. Returns None on timeout."""
+        # Drain stale input
+        while not self._user_input_queue.empty():
+            try:
+                self._user_input_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        self._waiting_for_user_input = True
+        deadline = time.time() + timeout
+        try:
+            while time.time() < deadline:
+                try:
+                    return self._user_input_queue.get(timeout=5)
+                except queue.Empty:
+                    if not self._mgr.active_session:
+                        return None
+                    continue
+        finally:
+            self._waiting_for_user_input = False
+        return None
 
     # ------------------------------------------------------------------
     # Telegram helpers
