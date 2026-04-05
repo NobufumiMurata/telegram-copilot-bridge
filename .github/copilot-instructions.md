@@ -1,28 +1,38 @@
-# mcp-telegram-notify
+# telegram-copilot-bridge
 
 Telegram Bot API を使って VS Code Copilot に通知・承認・対話ツールを提供する MCP サーバー。
+スタンドアロン Hub モードでは MCP を介さず Telegram → Copilot CLI (ACP) ブリッジとしても動作する。
 公開リポジトリ — 機密情報は一切含まない。
 
 ## プロジェクト構造
 
 - Python 3.12+, src layout
-- MCP stdio transport (VS Code が起動・管理)
+- 2 つの起動モード:
+  - **MCP モード** (デフォルト): MCP stdio transport で VS Code が起動・管理
+  - **Hub モード** (`--hub`): スタンドアロンで Telegram → Copilot CLI (ACP) ブリッジ
 - Telegram Bot API は `requests` で直接呼び出し (追加ライブラリ不要)
 - 認証情報は環境変数優先、フォールバックで JSON 設定ファイル
 
 ## ファイル構成
 
 ```text
-src/mcp_telegram_notify/
+src/telegram_copilot_bridge/
   __init__.py
-  __main__.py   ← python -m mcp_telegram_notify で起動
-  server.py     ← MCP サーバー (FastMCP デコレータベース)
-  telegram.py   ← Telegram Bot API クライアント (requests のみ)
-  config.py     ← 設定管理 (環境変数 / JSON)
+  __main__.py          ← エントリポイント (MCP / --hub モード切替)
+  server.py            ← MCP サーバー (FastMCP デコレータベース)
+  hub.py               ← スタンドアロン Hub ロジック (MCP 非依存)
+  telegram.py          ← Telegram Bot API クライアント (バックグラウンドリスナー付き)
+  config.py            ← 設定管理 (環境変数 / JSON)
+  copilot_bridge.py    ← Copilot CLI ACP クライアント (NDJSON over stdio)
+  session_manager.py   ← マルチセッション管理
+  bot_commander.py     ← Telegram コマンドルーター
 tests/
   test_config.py
   test_telegram.py
   test_server.py
+  test_copilot_bridge.py
+  test_session_manager.py
+  test_bot_commander.py
 ```
 
 ## MCP ツール定義
@@ -33,6 +43,7 @@ tests/
 | `telegram_ask_approval` | インラインボタン承認 + 応答待ち | `question: str, options: list[str], timeout_minutes: int = 5` |
 | `telegram_wait_response` | フリーテキスト応答待ち | `prompt: str, timeout_minutes: int = 10` |
 | `telegram_send_file` | ファイル送信 | `file_path: str, caption: str = ""` |
+| `telegram_copilot_hub` | Copilot CLI リモート制御モード | `default_cwd: str, timeout_minutes: int = 60` |
 
 ## セキュリティ要件
 
@@ -54,9 +65,9 @@ tests/
 ```json
 {
   "servers": {
-    "telegram-notify": {
+    "telegram-copilot-bridge": {
       "command": "python",
-      "args": ["-m", "mcp_telegram_notify"],
+      "args": ["-m", "telegram_copilot_bridge"],
       "env": {
         "TELEGRAM_BOT_TOKEN": "...",
         "TELEGRAM_CHAT_ID": "...",
@@ -76,6 +87,43 @@ tests/
 3. タスク完了時に `telegram_notify` でレポート送信
 4. `telegram_wait_response` で次のプロンプトをスマホから受信 → Copilot が継続
 
+## Copilot リモート制御 (ACP)
+
+Copilot CLI を Telegram からリモート制御する。2 つの起動方法がある:
+
+### A. スタンドアロン Hub モード (MCP 不要)
+
+```bash
+# 環境変数をセットして直接起動
+export TELEGRAM_BOT_TOKEN="..."
+export TELEGRAM_CHAT_ID="..."
+export TELEGRAM_ALLOWED_USERS="123456789"
+python -m telegram_copilot_bridge --hub [--cwd /path/to/work] [--timeout 60] [-v]
+
+# モデル指定 + Autopilot モード
+python -m telegram_copilot_bridge --hub --model claude-opus-4.6 --autopilot
+
+# 手動承認モード (デフォルト): ツール呼び出し時に Telegram インラインボタンで承認
+python -m telegram_copilot_bridge --hub --model claude-opus-4.6
+```
+
+MCP サーバーを経由せず、直接 Telegram polling → Copilot CLI (ACP) のルーティングを行う。
+
+### B. MCP ツール経由
+
+`telegram_copilot_hub` MCP ツールを Copilot Chat から呼び出す。内部で同じ `hub.py` の `run_hub()` に委譲。
+
+### 共通仕様
+
+- Copilot CLI (`copilot --acp --stdio`) を subprocess で起動
+- ACP (Agent Client Protocol) v1 で NDJSON over stdio 通信
+- 複数セッションの同時管理が可能
+- Telegram コマンド: /new, /list, /switch, /status, /stop, /done
+- ツール許可: `--allow-tool` ホワイトリスト方式 (--allow-all-tools 禁止)
+- 作業ディレクトリ制限: `COPILOT_ALLOWED_DIRS` で設定可能
+- **権限リクエスト**: Copilot CLI がツール使用許可を求める `session/request_permission` を
+  Telegram インラインボタン (Allow once / Always allow / Deny) で中継。`--autopilot` 時はスキップ。
+
 ## 実装上の設計判断
 
 - **FastMCP** デコレータベースで簡潔にツール定義 (`mcp.server.fastmcp.FastMCP`)
@@ -83,3 +131,8 @@ tests/
 - テスト: `pytest` + `unittest.mock` で Telegram API をモック
 - long-polling: `getUpdates` API でユーザー応答を取得 (Webhook サーバー不要)
 - `_client` はシングルトンパターン — MCP サーバーのライフサイクル内で 1 回だけ初期化
+- Hub ロジック (`hub.py`): MCP に依存しない独立モジュール。MCP ツールとスタンドアロン CLI の両方から呼び出される
+- `__main__.py`: argparse で `--hub` / `--cwd` / `--timeout` / `-v` を処理。デフォルトは MCP モード
+- Copilot CLI ACP: `copilot --acp --stdio` を subprocess.Popen で起動、NDJSON (1行1JSON) で通信
+- ACP メソッド: `initialize` → `session/new` → `session/prompt` (ストリーム応答は `session/update` 通知)
+- バックグラウンドリスナー: Telegram ポーリングをデーモンスレッドで実行、メッセージハンドラーまたはキューで配信

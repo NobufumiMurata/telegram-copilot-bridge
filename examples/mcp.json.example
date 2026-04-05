@@ -1,8 +1,8 @@
 {
   "servers": {
-    "telegram-notify": {
+    "telegram-copilot-bridge": {
       "command": "python",
-      "args": ["-m", "mcp_telegram_notify"],
+      "args": ["-m", "telegram_copilot_bridge"],
       "env": {
         "TELEGRAM_BOT_TOKEN": "<your-bot-token>",
         "TELEGRAM_CHAT_ID": "<your-chat-id>",

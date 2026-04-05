@@ -10,7 +10,7 @@ from .config import load_config
 from .telegram import TelegramClient
 
 mcp = FastMCP(
-    "telegram-notify",
+    "telegram-copilot-bridge",
     instructions="Telegram notifications, approvals, and remote prompts for VS Code Copilot",
 )
 
@@ -119,3 +119,50 @@ def telegram_send_file(
     client = _get_client()
     client.send_document(file_path, caption=caption)
     return f"File sent: {file_path}"
+
+
+# ------------------------------------------------------------------
+# Copilot Remote Control Hub
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def telegram_copilot_hub(
+    default_cwd: str = "",
+    timeout_minutes: int = 60,
+    model: str = "",
+    autopilot: bool = False,
+) -> str:
+    """Start Telegram remote-control mode for Copilot CLI.
+
+    Enters a loop where Telegram Bot messages are routed to Copilot CLI
+    sessions via ACP (Agent Client Protocol).
+
+    Telegram commands available to the user:
+      /new [cwd]      — start a new Copilot session
+      /list           — list active sessions
+      /switch <id>    — switch active session
+      /status         — session status
+      /stop [id]      — stop a session
+      /done           — exit remote control mode
+      (free text)     — send as prompt to active Copilot session
+
+    Call this tool when the user wants to control Copilot from Telegram.
+    The tool blocks until the user sends /done or timeout is reached.
+
+    Args:
+        default_cwd: Default working directory for new sessions.
+                     If empty, uses the current working directory.
+        timeout_minutes: How long to stay in hub mode (default: 60).
+        model: AI model to use (e.g. claude-opus-4.6). Empty = default.
+        autopilot: Enable autopilot mode (auto-approve tool calls).
+    """
+    from .hub import run_hub
+
+    return run_hub(
+        default_cwd=default_cwd,
+        timeout_minutes=timeout_minutes,
+        client=_get_client(),
+        model=model or None,
+        autopilot=autopilot,
+    )

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
+import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -31,6 +33,12 @@ class TelegramClient:
         self._base = API_BASE.format(token=bot_token)
         self._timeout = request_timeout
         self._update_offset: int | None = None
+        # Background listener state
+        self._listener_running = False
+        self._listener_thread: threading.Thread | None = None
+        self._text_queue: queue.Queue[str] = queue.Queue()
+        self._callback_queue: queue.Queue[str] = queue.Queue()
+        self._message_handler: Callable[[str], str | None] | None = None
 
     # ------------------------------------------------------------------
     # Low-level API helpers
@@ -119,6 +127,12 @@ class TelegramClient:
 
         Returns the callback_data string, or None on timeout.
         """
+        if self._listener_running:
+            try:
+                return self._callback_queue.get(timeout=timeout_seconds)
+            except queue.Empty:
+                return None
+
         deadline = time.time() + timeout_seconds
         # Drain stale updates before waiting
         self._drain_updates()
@@ -142,6 +156,12 @@ class TelegramClient:
 
         Returns the message text, or None on timeout.
         """
+        if self._listener_running:
+            try:
+                return self._text_queue.get(timeout=timeout_seconds)
+            except queue.Empty:
+                return None
+
         deadline = time.time() + timeout_seconds
         # Drain stale updates before waiting
         self._drain_updates()
@@ -165,3 +185,88 @@ class TelegramClient:
             self.get_updates(timeout=0)
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Background listener
+    # ------------------------------------------------------------------
+
+    @property
+    def listener_active(self) -> bool:
+        return self._listener_running
+
+    def start_listener(
+        self,
+        message_handler: Callable[[str], str | None] | None = None,
+    ) -> None:
+        """Start background polling.
+
+        When *message_handler* is provided, every allowed text message is
+        passed to it instead of being queued.  If the handler returns
+        ``"SESSION_END"``, the listener stops.
+        """
+        if self._listener_running:
+            return
+        self._message_handler = message_handler
+        self._drain_updates()
+        self._listener_running = True
+        self._listener_thread = threading.Thread(
+            target=self._listener_loop, daemon=True, name="tg-listener"
+        )
+        self._listener_thread.start()
+        logger.info("Telegram background listener started")
+
+    def stop_listener(self) -> None:
+        if not self._listener_running:
+            return
+        self._listener_running = False
+        if self._listener_thread:
+            self._listener_thread.join(timeout=35)
+            self._listener_thread = None
+        self._message_handler = None
+        # Drain queues
+        for q in (self._text_queue, self._callback_queue):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+        logger.info("Telegram background listener stopped")
+
+    def _listener_loop(self) -> None:
+        while self._listener_running:
+            try:
+                updates = self.get_updates(timeout=10)
+                for upd in updates:
+                    self._route_update(upd)
+            except Exception:
+                logger.exception("Error in Telegram listener")
+                if self._listener_running:
+                    time.sleep(2)
+
+    def _route_update(self, update: dict[str, Any]) -> None:
+        # Callback queries → queue
+        cb = update.get("callback_query")
+        if cb:
+            user_id = cb.get("from", {}).get("id", "")
+            if not self._is_allowed(user_id):
+                return
+            self.answer_callback_query(cb["id"], text=cb["data"])
+            self._callback_queue.put(cb["data"])
+            return
+
+        # Text messages
+        msg = update.get("message")
+        if not msg or not msg.get("text"):
+            return
+        user_id = msg.get("from", {}).get("id", "")
+        if not self._is_allowed(user_id):
+            return
+
+        text: str = msg["text"]
+
+        if self._message_handler:
+            result = self._message_handler(text)
+            if result == "SESSION_END":
+                self._listener_running = False
+        else:
+            self._text_queue.put(text)

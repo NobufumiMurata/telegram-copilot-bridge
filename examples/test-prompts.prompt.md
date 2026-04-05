@@ -1,5 +1,5 @@
 ---
-description: "mcp-telegram-notify の 4 ツールを実機テストするプロンプト集"
+description: "telegram-copilot-bridge の 4 ツールを実機テストするプロンプト集"
 ---
 
 # Telegram MCP テストプロンプト

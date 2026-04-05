@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch, mock_open
 
 import pytest
 
-from mcp_telegram_notify.telegram import TelegramClient
+from telegram_copilot_bridge.telegram import TelegramClient
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def client():
 
 
 class TestSendMessage:
-    @patch("mcp_telegram_notify.telegram.requests.post")
+    @patch("telegram_copilot_bridge.telegram.requests.post")
     def test_send_message(self, mock_post, client):
         mock_post.return_value = MagicMock(
             status_code=200,
@@ -32,7 +32,7 @@ class TestSendMessage:
         assert call_args[1]["data"]["text"] == "Hello"
         assert call_args[1]["data"]["chat_id"] == "12345"
 
-    @patch("mcp_telegram_notify.telegram.requests.post")
+    @patch("telegram_copilot_bridge.telegram.requests.post")
     def test_send_inline_keyboard(self, mock_post, client):
         mock_post.return_value = MagicMock(
             status_code=200,
@@ -49,14 +49,14 @@ class TestSendMessage:
 
 
 class TestSendDocument:
-    @patch("mcp_telegram_notify.telegram.requests.post")
+    @patch("telegram_copilot_bridge.telegram.requests.post")
     def test_file_not_found(self, mock_post, client):
         with pytest.raises(FileNotFoundError):
             client.send_document("/nonexistent/file.txt")
 
 
 class TestWaitForCallback:
-    @patch("mcp_telegram_notify.telegram.requests.post")
+    @patch("telegram_copilot_bridge.telegram.requests.post")
     def test_receives_allowed_callback(self, mock_post, client):
         # First call: drain (empty), Second call: callback update
         mock_post.return_value = MagicMock(
@@ -84,8 +84,8 @@ class TestWaitForCallback:
         result = client.wait_for_callback(timeout_seconds=5)
         assert result == "yes"
 
-    @patch("mcp_telegram_notify.telegram.time.time")
-    @patch("mcp_telegram_notify.telegram.requests.post")
+    @patch("telegram_copilot_bridge.telegram.time.time")
+    @patch("telegram_copilot_bridge.telegram.requests.post")
     def test_ignores_unauthorized_user(self, mock_post, mock_time, client):
         mock_post.return_value = MagicMock(
             status_code=200, raise_for_status=MagicMock()
@@ -116,7 +116,7 @@ class TestWaitForCallback:
 
 
 class TestWaitForText:
-    @patch("mcp_telegram_notify.telegram.requests.post")
+    @patch("telegram_copilot_bridge.telegram.requests.post")
     def test_receives_allowed_text(self, mock_post, client):
         mock_post.return_value = MagicMock(
             status_code=200, raise_for_status=MagicMock()
@@ -141,7 +141,7 @@ class TestWaitForText:
         result = client.wait_for_text(timeout_seconds=5)
         assert result == "Check Sentinel rules"
 
-    @patch("mcp_telegram_notify.telegram.requests.post")
+    @patch("telegram_copilot_bridge.telegram.requests.post")
     def test_timeout_returns_none(self, mock_post, client):
         mock_post.return_value = MagicMock(
             status_code=200, raise_for_status=MagicMock()

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import the module to trigger FastMCP initialization once
-import mcp_telegram_notify.server as srv
+import telegram_copilot_bridge.server as srv
 
 
 class TestTelegramNotify:

@@ -1,4 +1,4 @@
-# mcp-telegram-notify
+# telegram-copilot-bridge
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that bridges VS Code Copilot with Telegram, enabling mobile notifications, approval workflows, and remote prompt input from your smartphone.
 
@@ -8,6 +8,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that b
 - **Approval Flow** — Inline keyboard buttons for approve/reject decisions
 - **Remote Prompt** — Receive next instructions from your phone via free-text response
 - **File Sharing** — Send files (logs, JSON results) directly to Telegram
+- **Copilot Remote Control** — Full remote control of Copilot CLI from Telegram via ACP (Agent Client Protocol)
 
 ## Use Case: Copilot Autopilot + Mobile Control
 
@@ -25,14 +26,14 @@ No need to be at your desk — control Copilot entirely from your smartphone.
 ## Installation
 
 ```bash
-pip install mcp-telegram-notify
+pip install telegram-copilot-bridge
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/NobufumiMurata/mcp-telegram-notify.git
-cd mcp-telegram-notify
+git clone https://github.com/NobufumiMurata/telegram-copilot-bridge.git
+cd telegram-copilot-bridge
 pip install -e ".[dev]"
 ```
 
@@ -63,9 +64,9 @@ Add to your `.vscode/mcp.json`:
 ```json
 {
   "servers": {
-    "telegram-notify": {
+    "telegram-copilot-bridge": {
       "command": "python",
-      "args": ["-m", "mcp_telegram_notify"],
+      "args": ["-m", "telegram_copilot_bridge"],
       "env": {
         "TELEGRAM_BOT_TOKEN": "<your-bot-token>",
         "TELEGRAM_CHAT_ID": "<your-chat-id>",
@@ -93,9 +94,9 @@ Then set `TELEGRAM_CONFIG_PATH` to point to the file:
 ```json
 {
   "servers": {
-    "telegram-notify": {
+    "telegram-copilot-bridge": {
       "command": "python",
-      "args": ["-m", "mcp_telegram_notify"],
+      "args": ["-m", "telegram_copilot_bridge"],
       "env": {
         "TELEGRAM_CONFIG_PATH": "secrets/telegram-bot.json"
       }
@@ -112,6 +113,47 @@ Then set `TELEGRAM_CONFIG_PATH` to point to the file:
 | `telegram_ask_approval` | Inline buttons + wait for selection | `question`, `options`, `timeout_minutes` |
 | `telegram_wait_response` | Send prompt + wait for free-text reply | `prompt`, `timeout_minutes` |
 | `telegram_send_file` | Send a file | `file_path`, `caption` |
+| `telegram_copilot_hub` | Copilot remote control via Telegram | `default_cwd`, `timeout_minutes` |
+
+### Copilot Remote Control Hub
+
+`telegram_copilot_hub` connects Telegram to [GitHub Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) via the ACP (Agent Client Protocol). You can start Copilot sessions, send prompts, and manage multiple sessions — all from your phone.
+
+```
+📱 Telegram
+    ↕ (Bot API long-polling)
+🐍 telegram-copilot-bridge
+    ↕ (stdin/stdout NDJSON)
+🤖 copilot --acp --stdio
+```
+
+**Telegram commands (in hub mode):**
+
+| Command | Action |
+|---------|--------|
+| `/new [dir]` | Start a new Copilot session |
+| `/list` | List active sessions |
+| `/switch <id>` | Switch active session |
+| `/status` | Session status |
+| `/stop [id]` | Stop a session |
+| `/done` | Stop all sessions & exit hub |
+| `/help` | Show commands |
+| *(any text)* | Send as prompt to active session |
+
+**Prerequisites:** Install [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli) and authenticate:
+
+```bash
+winget install GitHub.Copilot   # or: npm install -g @github/copilot
+copilot                         # then /login to authenticate
+```
+
+**Environment variables for hub mode:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `COPILOT_CLI_PATH` | Path to copilot executable | `copilot` (from PATH) |
+| `COPILOT_ALLOWED_TOOLS` | Comma-separated tools to allow | `shell(git),read,write` |
+| `COPILOT_ALLOWED_DIRS` | Comma-separated allowed working dirs | (any) |
 
 ### Example: Copilot Agent Instructions
 
@@ -130,15 +172,17 @@ Add to your `.github/agents/*.agent.md` to make Copilot use these tools automati
 ## Security
 
 - **User allowlist**: Only messages from `TELEGRAM_ALLOWED_USERS` are accepted. All other users are silently ignored.
-- **Timeouts**: All waiting operations have configurable timeouts (default: 5 min for approval, 10 min for text). Returns `TIMEOUT` status on expiry.
+- **Timeouts**: All waiting operations have configurable timeouts (default: 5 min for approval, 10 min for text, 60 min for hub). Returns `TIMEOUT` status on expiry.
 - **No secrets in repo**: All credentials via environment variables or external config file.
 - **Stale update draining**: Old Telegram updates are consumed before waiting, preventing stale responses from being accepted.
+- **Copilot tool allowlist**: Hub mode uses `--allow-tool` (not `--allow-all-tools`) to restrict what Copilot CLI can do. Configure via `COPILOT_ALLOWED_TOOLS`.
+- **Directory restrictions**: Optionally restrict which directories Copilot sessions can operate in via `COPILOT_ALLOWED_DIRS`.
 
 ## Development
 
 ```bash
-git clone https://github.com/NobufumiMurata/mcp-telegram-notify.git
-cd mcp-telegram-notify
+git clone https://github.com/NobufumiMurata/telegram-copilot-bridge.git
+cd telegram-copilot-bridge
 pip install -e ".[dev]"
 pytest
 ```

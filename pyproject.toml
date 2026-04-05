@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mcp-telegram-notify"
+name = "telegram-copilot-bridge"
 version = "0.1.0"
 description = "MCP server for Telegram notifications, approvals, and remote prompts with VS Code Copilot"
 readme = "README.md"
@@ -31,12 +31,12 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/NobufumiMurata/mcp-telegram-notify"
-Repository = "https://github.com/NobufumiMurata/mcp-telegram-notify"
-Issues = "https://github.com/NobufumiMurata/mcp-telegram-notify/issues"
+Homepage = "https://github.com/NobufumiMurata/telegram-copilot-bridge"
+Repository = "https://github.com/NobufumiMurata/telegram-copilot-bridge"
+Issues = "https://github.com/NobufumiMurata/telegram-copilot-bridge/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mcp_telegram_notify"]
+packages = ["src/telegram_copilot_bridge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

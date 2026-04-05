@@ -1,4 +1,4 @@
-"""Configuration management for mcp-telegram-notify.
+"""Configuration management for telegram-copilot-bridge.
 
 Priority: environment variables > JSON config file.
 """

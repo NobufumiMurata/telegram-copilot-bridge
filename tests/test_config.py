@@ -6,7 +6,7 @@ import tempfile
 
 import pytest
 
-from mcp_telegram_notify.config import Config, load_config
+from telegram_copilot_bridge.config import Config, load_config
 
 
 class TestConfig:
