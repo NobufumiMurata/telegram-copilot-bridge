@@ -18,7 +18,7 @@ import os
 import threading
 from typing import Any, Callable
 
-from .session_manager import SessionManager
+from .session_manager import SessionManager, SessionState
 from .telegram import TelegramClient
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,6 @@ class BotCommander:
         self._tg = telegram
         self._default_cwd = default_cwd or os.getcwd()
         self._dirs_root = dirs_root or ""
-        self._prompt_in_progress = False
         self._last_response: str | None = None
 
     def get_permission_handler(self) -> Callable[[dict[str, Any]], str]:
@@ -54,6 +53,8 @@ class BotCommander:
 
     def _handle_permission_request(self, params: dict[str, Any]) -> str:
         """Ask user via Telegram inline keyboard and return optionId."""
+        self._mgr.set_session_state(SessionState.PERMISSION_PENDING)
+
         tool_call = params.get("toolCall", {})
         title = tool_call.get("title", "Unknown action")
         raw_input = tool_call.get("rawInput", {})
@@ -94,6 +95,8 @@ class BotCommander:
         except Exception:
             logger.exception("Failed to send permission request")
             return "reject_once"
+        finally:
+            self._mgr.set_session_state(SessionState.PROCESSING)
 
     # ------------------------------------------------------------------
     # Main dispatch
@@ -420,11 +423,11 @@ class BotCommander:
             )
             return None
 
-        if self._prompt_in_progress:
-            self._reply("⏳ Still processing the previous prompt. Please wait.")
+        session = self._mgr.active_session
+        if session.state != SessionState.IDLE:
+            self._reply(f"⏳ {session.state_label}\nPlease wait.")
             return None
 
-        self._prompt_in_progress = True
         self._reply("⏳ Processing…")
 
         threading.Thread(
@@ -446,8 +449,6 @@ class BotCommander:
         except Exception as e:
             logger.exception("Prompt execution failed")
             self._reply(f"❌ Error:\n<pre>{html.escape(str(e))}</pre>")
-        finally:
-            self._prompt_in_progress = False
 
     # ------------------------------------------------------------------
     # Telegram helpers

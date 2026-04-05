@@ -1,12 +1,13 @@
 """Tests for BotCommander Telegram command router."""
 
 import time
+import threading
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
 from telegram_copilot_bridge.bot_commander import BotCommander
-from telegram_copilot_bridge.session_manager import Session
+from telegram_copilot_bridge.session_manager import Session, SessionState
 
 
 def _make_commander():
@@ -18,7 +19,13 @@ def _make_commander():
 def _wait_prompt_done(cmd, timeout=2.0):
     """Wait for the background prompt worker to finish."""
     deadline = time.time() + timeout
-    while cmd._prompt_in_progress and time.time() < deadline:
+    # Wait for any prompt-worker threads to complete
+    while time.time() < deadline:
+        workers = [
+            t for t in threading.enumerate() if t.name == "prompt-worker"
+        ]
+        if not workers:
+            break
         time.sleep(0.05)
 
 

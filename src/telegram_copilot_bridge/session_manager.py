@@ -14,6 +14,29 @@ from .copilot_bridge import CopilotProcess, PromptResult
 logger = logging.getLogger(__name__)
 
 
+class SessionState:
+    """Possible session states."""
+
+    IDLE = "idle"
+    PROCESSING = "processing"
+    PERMISSION_PENDING = "permission_pending"
+
+
+# Human-readable labels for each state (used in Telegram messages)
+_STATE_LABELS = {
+    SessionState.IDLE: "💤 Idle (waiting for prompt)",
+    SessionState.PROCESSING: "⚡ Processing…",
+    SessionState.PERMISSION_PENDING: "🔐 Waiting for permission…",
+}
+
+# Short icons for list view
+_STATE_ICONS = {
+    SessionState.IDLE: "💤",
+    SessionState.PROCESSING: "⚡",
+    SessionState.PERMISSION_PENDING: "🔐",
+}
+
+
 @dataclass
 class Session:
     """Metadata for one Copilot ACP session."""
@@ -25,10 +48,19 @@ class Session:
     mode: str = ""
     prompt_count: int = 0
     last_activity: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    state: str = SessionState.IDLE
 
     def touch(self) -> None:
         self.last_activity = datetime.now(timezone.utc)
         self.prompt_count += 1
+
+    @property
+    def state_label(self) -> str:
+        return _STATE_LABELS.get(self.state, self.state)
+
+    @property
+    def state_icon(self) -> str:
+        return _STATE_ICONS.get(self.state, "❓")
 
 
 class SessionManager:
@@ -335,6 +367,14 @@ class SessionManager:
     # Prompt
     # ------------------------------------------------------------------
 
+    def set_session_state(
+        self, state: str, session_id: str | None = None
+    ) -> None:
+        """Update the state of a session (idle, processing, permission_pending)."""
+        sid = session_id or self._active_session_id
+        if sid and sid in self._sessions:
+            self._sessions[sid].state = state
+
     def send_prompt(
         self,
         text: str,
@@ -353,8 +393,12 @@ class SessionManager:
 
         session = self._sessions[sid]
         session.touch()
+        session.state = SessionState.PROCESSING
 
-        return proc.prompt(sid, text, timeout=timeout, on_chunk=on_chunk)
+        try:
+            return proc.prompt(sid, text, timeout=timeout, on_chunk=on_chunk)
+        finally:
+            session.state = SessionState.IDLE
 
     # ------------------------------------------------------------------
     # Status
@@ -377,7 +421,8 @@ class SessionManager:
 
         lines = [
             f"<b>🤖 Session {is_active}{s.id[:8]}</b>",
-            f"Status: {alive}",
+            f"Process: {alive}",
+            f"State: {s.state_label}",
             f"Model: <code>{s.model}</code>",
             f"Mode: {s.mode}",
             f"CWD: <code>{s.cwd}</code>",
@@ -397,8 +442,8 @@ class SessionManager:
             proc = self._processes.get(s.id)
             icon = "🟢" if proc and proc.alive else "🔴"
             lines.append(
-                f"{active}{icon} <code>{s.id[:8]}</code> "
-                f"| {s.model} | {s.cwd} | {s.prompt_count} prompts"
+                f"{active}{icon} <code>{s.id[:8]}</code> {s.state_icon}"
+                f" | {s.model} | {s.cwd} | {s.prompt_count} prompts"
             )
         lines.append("\nUse /switch &lt;id&gt; to change active session.")
         return "\n".join(lines)

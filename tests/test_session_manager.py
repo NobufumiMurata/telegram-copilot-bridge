@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from telegram_copilot_bridge.session_manager import SessionManager, Session
+from telegram_copilot_bridge.session_manager import SessionManager, Session, SessionState
 
 
 def _mock_copilot_process():
@@ -158,6 +158,61 @@ class TestSessionManager:
         status = mgr.get_status()
         assert "sess-aaa" in status
         assert "claude-sonnet" in status
+        assert "Idle" in status
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_send_prompt_sets_state(self, MockCP, mock_find):
+        """send_prompt transitions state: idle → processing → idle."""
+        mock_proc = _mock_copilot_process()
+        MockCP.return_value = mock_proc
+
+        mgr = SessionManager()
+        session = mgr.create_session("/tmp/project")
+        assert session.state == SessionState.IDLE
+
+        # Track state during prompt
+        states_during: list[str] = []
+
+        def capture_state(*args, **kwargs):
+            states_during.append(session.state)
+            return mock_proc.prompt.return_value
+
+        mock_proc.prompt.side_effect = capture_state
+
+        mgr.send_prompt("Hello")
+        assert SessionState.PROCESSING in states_during
+        assert session.state == SessionState.IDLE
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_send_prompt_resets_state_on_error(self, MockCP, mock_find):
+        """State returns to idle even if prompt raises."""
+        mock_proc = _mock_copilot_process()
+        mock_proc.prompt.side_effect = RuntimeError("boom")
+        MockCP.return_value = mock_proc
+
+        mgr = SessionManager()
+        session = mgr.create_session("/tmp/project")
+        with pytest.raises(RuntimeError):
+            mgr.send_prompt("Hello")
+        assert session.state == SessionState.IDLE
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_set_session_state(self, MockCP, mock_find):
+        mock_proc = _mock_copilot_process()
+        MockCP.return_value = mock_proc
+
+        mgr = SessionManager()
+        session = mgr.create_session("/tmp/project")
+        assert session.state == SessionState.IDLE
+
+        mgr.set_session_state(SessionState.PERMISSION_PENDING)
+        assert session.state == SessionState.PERMISSION_PENDING
+
+        mgr.set_session_state(SessionState.IDLE)
+        assert session.state == SessionState.IDLE
 
     @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
     @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
