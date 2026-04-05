@@ -114,6 +114,67 @@ class TestHandleCommands:
         assert "Unknown" in msg
 
 
+class TestHistoryResume:
+    def test_history_command(self):
+        cmd, mgr, tg = _make_commander()
+        sessions = [
+            {"sessionId": "ext-aaa-111", "cwd": "/tmp/a", "title": "Old session"},
+            {"sessionId": "ext-bbb-222", "cwd": "/tmp/b", "title": "Another"},
+        ]
+        mgr.get_history_data.return_value = ("📜 Session History (2)", sessions)
+
+        cmd.handle("/history")
+        # "Discovering…" via send_message, then report via send_inline_keyboard
+        tg.send_message.assert_called_once()
+        tg.send_inline_keyboard.assert_called_once()
+        text_arg = tg.send_inline_keyboard.call_args[0][0]
+        buttons_arg = tg.send_inline_keyboard.call_args[0][1]
+        assert "Session History" in text_arg
+        assert len(buttons_arg) == 2
+        assert buttons_arg[0][0]["callback_data"] == "resume:ext-aaa-"
+        assert buttons_arg[1][0]["callback_data"] == "resume:ext-bbb-"
+
+    def test_history_command_no_sessions(self):
+        cmd, mgr, tg = _make_commander()
+        mgr.get_history_data.return_value = ("ℹ️ No persisted sessions found.", [])
+
+        cmd.handle("/history")
+        assert tg.send_message.call_count == 2  # "Discovering…" + no-sessions msg
+        tg.send_inline_keyboard.assert_not_called()
+
+    def test_resume_command(self):
+        cmd, mgr, tg = _make_commander()
+        session = Session(id="ext-aaa-111", cwd="/tmp/ext", model="opus", mode="agent")
+        mgr.resume_session.return_value = session
+
+        cmd.handle("/resume ext-aaa")
+        mgr.resume_session.assert_called_once_with("ext-aaa")
+        last_msg = tg.send_message.call_args_list[-1][0][0]
+        assert "Resumed" in last_msg
+        assert "ext-aaa" in last_msg
+
+    def test_resume_no_arg(self):
+        cmd, mgr, tg = _make_commander()
+        cmd.handle("/resume")
+        msg = tg.send_message.call_args[0][0]
+        assert "Usage" in msg
+
+    def test_resume_not_found(self):
+        cmd, mgr, tg = _make_commander()
+        mgr.resume_session.side_effect = ValueError("No persisted session matching 'xxx'")
+
+        cmd.handle("/resume xxx")
+        last_msg = tg.send_message.call_args_list[-1][0][0]
+        assert "No persisted session" in last_msg
+
+    def test_help_includes_history_resume(self):
+        cmd, mgr, tg = _make_commander()
+        cmd.handle("/help")
+        msg = tg.send_message.call_args[0][0]
+        assert "/history" in msg
+        assert "/resume" in msg
+
+
 class TestHandlePrompt:
     def test_prompt_no_session(self):
         cmd, mgr, tg = _make_commander()

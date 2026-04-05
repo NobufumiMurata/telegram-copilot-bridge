@@ -165,3 +165,62 @@ class TestIsAllowed:
     def test_allowlist_allows_known(self, client):
         assert client._is_allowed(999) is True
         assert client._is_allowed("999") is True
+
+
+class TestRouteResumeCallback:
+    def test_resume_callback_routes_as_command(self, client):
+        """A callback_query with 'resume:' prefix should be routed
+        through the message_handler as '/resume <id>'."""
+        handler = MagicMock(return_value=None)
+        client._message_handler = handler
+        client._listener_running = True
+
+        # Patch answer_callback_query to avoid real API calls
+        client.answer_callback_query = MagicMock()
+
+        update = {
+            "callback_query": {
+                "id": "cb-resume",
+                "from": {"id": 999},
+                "data": "resume:ext-aaa-",
+            }
+        }
+        client._route_update(update)
+
+        client.answer_callback_query.assert_called_once_with(
+            "cb-resume", text="Resuming…"
+        )
+        handler.assert_called_once_with("/resume ext-aaa-")
+
+    def test_resume_callback_not_queued(self, client):
+        """Resume callbacks should NOT go into the callback_queue."""
+        handler = MagicMock(return_value=None)
+        client._message_handler = handler
+        client._listener_running = True
+        client.answer_callback_query = MagicMock()
+
+        update = {
+            "callback_query": {
+                "id": "cb-resume2",
+                "from": {"id": 999},
+                "data": "resume:abc",
+            }
+        }
+        client._route_update(update)
+        assert client._callback_queue.empty()
+
+    def test_regular_callback_still_queued(self, client):
+        """Non-resume callbacks should still go into the callback_queue."""
+        client._listener_running = True
+        client.answer_callback_query = MagicMock()
+
+        update = {
+            "callback_query": {
+                "id": "cb-perm",
+                "from": {"id": 999},
+                "data": "allow_once",
+            }
+        }
+        client._route_update(update)
+        assert not client._callback_queue.empty()
+        assert client._callback_queue.get_nowait() == "allow_once"

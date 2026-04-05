@@ -123,10 +123,15 @@ class BotCommander:
         handlers = {
             "/new": self._cmd_new,
             "/list": self._cmd_list,
+            "/history": self._cmd_history,
+            "/resume": self._cmd_resume,
             "/switch": self._cmd_switch,
             "/status": self._cmd_status,
             "/stop": self._cmd_stop,
             "/done": self._cmd_done,
+            "/dirs": self._cmd_dirs,
+            "/model": self._cmd_model,
+            "/mode": self._cmd_mode,
             "/help": self._cmd_help,
         }
 
@@ -159,6 +164,48 @@ class BotCommander:
         self._reply(report)
         return None
 
+    def _cmd_history(self, _arg: str) -> str | None:
+        self._reply("⏳ Discovering persisted sessions…")
+        text, sessions = self._mgr.get_history_data()
+        if sessions:
+            buttons = []
+            for s in sessions[:10]:
+                sid = s.get("sessionId", "")
+                title = s.get("title", "")
+                label = f"▶ {sid[:8]}"
+                if title:
+                    label += f" {title[:24]}"
+                buttons.append([
+                    {"text": label, "callback_data": f"resume:{sid[:8]}"}
+                ])
+            self._tg.send_inline_keyboard(text, buttons)
+        else:
+            self._reply(text)
+        return None
+
+    def _cmd_resume(self, arg: str) -> str | None:
+        if not arg:
+            self._reply(
+                "Usage: /resume &lt;session-id-prefix&gt;\n"
+                "Use /history to see available sessions."
+            )
+            return None
+        try:
+            self._reply("⏳ Resuming session…")
+            session = self._mgr.resume_session(arg)
+            self._reply(
+                f"✅ Resumed session <code>{session.id[:8]}</code>\n"
+                f"Model: {session.model}\n"
+                f"Mode: {session.mode}\n"
+                f"CWD: <code>{session.cwd}</code>\n\n"
+                f"Send a message to continue working."
+            )
+        except ValueError as e:
+            self._reply(f"❌ {e}")
+        except Exception as e:
+            self._reply(f"❌ Failed to resume session:\n<code>{html.escape(str(e))}</code>")
+        return None
+
     def _cmd_switch(self, arg: str) -> str | None:
         if not arg:
             self._reply("Usage: /switch &lt;session-id-prefix&gt;")
@@ -188,17 +235,94 @@ class BotCommander:
         self._reply("👋 All sessions stopped. Exiting remote control mode.")
         return "SESSION_END"
 
+    def _cmd_dirs(self, arg: str) -> str | None:
+        """List directory contents to help choose a /new target."""
+        import pathlib
+
+        target = arg or self._default_cwd
+        try:
+            p = pathlib.Path(target).resolve()
+            if not p.is_dir():
+                self._reply(f"❌ Not a directory: <code>{html.escape(str(p))}</code>")
+                return None
+
+            entries = sorted(p.iterdir())
+            dirs = [e.name + "/" for e in entries if e.is_dir() and not e.name.startswith(".")]
+            files = [e.name for e in entries if e.is_file() and not e.name.startswith(".")]
+
+            lines = [f"📂 <code>{html.escape(str(p))}</code>\n"]
+            if dirs:
+                lines.append("<b>Folders:</b>")
+                for d in dirs[:30]:
+                    lines.append(f"  📁 <code>{html.escape(d)}</code>")
+                if len(dirs) > 30:
+                    lines.append(f"  ... +{len(dirs) - 30} more")
+            if files:
+                lines.append("<b>Files:</b>")
+                for f in files[:20]:
+                    lines.append(f"  📄 <code>{html.escape(f)}</code>")
+                if len(files) > 20:
+                    lines.append(f"  ... +{len(files) - 20} more")
+            if not dirs and not files:
+                lines.append("(empty)")
+
+            self._reply("\n".join(lines))
+        except Exception as e:
+            self._reply(f"❌ Error: <code>{html.escape(str(e))}</code>")
+        return None
+
+    def _cmd_model(self, arg: str) -> str | None:
+        """Show or change the AI model for new sessions."""
+        if not arg:
+            current = self._mgr.model or "default"
+            self._reply(
+                f"🧠 Current model: <code>{html.escape(current)}</code>\n\n"
+                "Usage: <code>/model claude-opus-4.6</code>\n"
+                "Common models:\n"
+                "  <code>claude-opus-4.6</code>\n"
+                "  <code>claude-sonnet-4.6</code>\n"
+                "  <code>claude-sonnet-4.5</code>\n"
+                "  <code>claude-haiku-4.5</code>\n\n"
+                "⚠️ Applies to new sessions only."
+            )
+        else:
+            self._mgr.model = arg
+            self._reply(f"🧠 Model set to: <code>{html.escape(arg)}</code>\nNew sessions will use this model.")
+        return None
+
+    def _cmd_mode(self, arg: str) -> str | None:
+        """Toggle between autopilot and manual approval mode."""
+        if arg.lower() in ("autopilot", "auto", "on"):
+            self._mgr.autopilot = True
+        elif arg.lower() in ("manual", "off"):
+            self._mgr.autopilot = False
+        else:
+            # Toggle
+            self._mgr.autopilot = not self._mgr.autopilot
+
+        label = "🤖 Autopilot" if self._mgr.autopilot else "🔐 Manual approval"
+        self._reply(f"Mode: {label}\n⚠️ Applies to new sessions only.")
+        return None
+
     def _cmd_help(self, _arg: str) -> str | None:
+        autopilot_label = "🤖 autopilot" if self._mgr.autopilot else "🔐 manual"
+        model_label = self._mgr.model or "default"
         self._reply(
             "<b>📖 Commands</b>\n"
             "/new [dir]     — New Copilot session\n"
-            "/list          — List sessions\n"
+            "/history       — List past CLI sessions\n"
+            "/resume &lt;id&gt;  — Resume a past session\n"
+            "/dirs [dir]    — Browse directories\n"
+            "/model [name]  — Show/set AI model\n"
+            "/mode          — Toggle autopilot/manual\n"
+            "/list          — List active sessions\n"
             "/switch &lt;id&gt;  — Switch active session\n"
             "/status        — Session status\n"
             "/stop [id]     — Stop a session\n"
             "/done          — Stop all & exit\n"
             "/help          — This message\n"
-            "\n(any text)     — Send as prompt"
+            "\n(any text)     — Send as prompt\n"
+            f"\n<b>Current:</b> model=<code>{model_label}</code> mode={autopilot_label}"
         )
         return None
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html as html_mod
 import logging
 import shutil
 from dataclasses import dataclass, field
@@ -58,6 +59,23 @@ class SessionManager:
 
     # ------------------------------------------------------------------
     # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def model(self) -> str | None:
+        return self._model
+
+    @model.setter
+    def model(self, value: str | None) -> None:
+        self._model = value
+
+    @property
+    def autopilot(self) -> bool:
+        return self._autopilot
+
+    @autopilot.setter
+    def autopilot(self, value: bool) -> None:
+        self._autopilot = value
     # ------------------------------------------------------------------
 
     @property
@@ -164,6 +182,140 @@ class SessionManager:
     def list_sessions(self) -> list[Session]:
         """Return all active sessions."""
         return list(self._sessions.values())
+
+    # ------------------------------------------------------------------
+    # External session discovery
+    # ------------------------------------------------------------------
+
+    def discover_sessions(self) -> list[dict[str, Any]]:
+        """Discover all persisted Copilot CLI sessions.
+
+        Spins up a temporary ACP process, calls ``session/list``, and
+        returns the raw session metadata.  The caller's managed sessions
+        are **not** affected.
+        """
+        proc = CopilotProcess(
+            copilot_cmd=self._copilot_cmd,
+            allowed_tools=self._allowed_tools,
+            model=self._model,
+            autopilot=self._autopilot,
+        )
+        try:
+            proc.start()
+            proc.initialize()
+            sessions = proc.list_sessions()
+        finally:
+            proc.stop()
+
+        # Filter out sessions already managed by this manager
+        managed_ids = set(self._sessions)
+        return [s for s in sessions if s.get("sessionId") not in managed_ids]
+
+    def resume_session(self, session_id: str) -> Session:
+        """Resume a previously persisted Copilot CLI session.
+
+        *session_id* can be a prefix. The method discovers available
+        sessions, finds the match, and runs ``session/load`` to reattach.
+
+        Raises ``ValueError`` if the session is not found or ambiguous.
+        """
+        if session_id in self._sessions:
+            raise ValueError(
+                f"Session {session_id[:8]} is already active. Use /switch."
+            )
+
+        # Discover external sessions
+        external = self.discover_sessions()
+        matches = [
+            s for s in external if s["sessionId"].startswith(session_id)
+        ]
+        if not matches:
+            raise ValueError(
+                f"No persisted session matching '{session_id}'. "
+                "Use /history to see available sessions."
+            )
+        if len(matches) > 1:
+            ids = ", ".join(m["sessionId"][:8] for m in matches)
+            raise ValueError(
+                f"Ambiguous prefix '{session_id}' matches: {ids}"
+            )
+
+        target = matches[0]
+        target_id = target["sessionId"]
+        cwd = target.get("cwd", "").replace("\\\\", "\\")
+
+        proc = CopilotProcess(
+            copilot_cmd=self._copilot_cmd,
+            allowed_tools=self._allowed_tools,
+            model=self._model,
+            autopilot=self._autopilot,
+        )
+        if self._permission_handler:
+            proc.set_permission_handler(self._permission_handler)
+        proc.start()
+        proc.initialize()
+        result = proc.load_session(target_id, cwd)
+
+        model = result.get("models", {}).get("currentModelId", "")
+        mode_id = result.get("modes", {}).get("currentModeId", "")
+        mode = mode_id.rsplit("#", 1)[-1] if "#" in mode_id else mode_id
+
+        session = Session(id=target_id, cwd=cwd, model=model, mode=mode)
+        self._sessions[target_id] = session
+        self._processes[target_id] = proc
+        self._active_session_id = target_id
+
+        logger.info(
+            "Resumed session %s (cwd=%s, model=%s)",
+            target_id[:8], cwd, model,
+        )
+        return session
+
+    def get_history_data(self) -> tuple[str, list[dict[str, Any]]]:
+        """Return an HTML report and raw session list of persisted sessions.
+
+        Returns ``(html_text, sessions_list)`` where *sessions_list* is the
+        raw external session metadata (empty on error or no results).
+        """
+        try:
+            external = self.discover_sessions()
+        except Exception as e:
+            return (
+                f"❌ Failed to discover sessions:\n"
+                f"<code>{html_mod.escape(str(e))}</code>",
+                [],
+            )
+
+        if not external:
+            return (
+                "ℹ️ No persisted sessions found (or all are already active).",
+                [],
+            )
+
+        lines = [f"<b>📜 Session History ({len(external)})</b>"]
+        for s in external:
+            sid = s.get("sessionId", "?")
+            cwd = s.get("cwd", "?").replace("\\\\", "\\")
+            title = s.get("title", "")
+            updated = s.get("updatedAt", "")
+            ts_label = updated[:16].replace("T", " ") if updated else "?"
+            line = (
+                f"  <code>{html_mod.escape(sid[:8])}</code> "
+                f"| {html_mod.escape(cwd)} "
+                f"| {html_mod.escape(title[:40])}"
+                f"\n      {ts_label}"
+            )
+            lines.append(line)
+        lines.append(
+            "\n💡 Tap a session below to resume, or use"
+            " <code>/resume &lt;id&gt;</code>"
+        )
+        return ("\n".join(lines), external)
+
+    def get_history_report(self) -> str:
+        """Return an HTML report of all persisted Copilot CLI sessions."""
+        text, _ = self.get_history_data()
+        return text
 
     # ------------------------------------------------------------------
     # Prompt

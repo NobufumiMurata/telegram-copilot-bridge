@@ -244,14 +244,25 @@ class TelegramClient:
                     time.sleep(2)
 
     def _route_update(self, update: dict[str, Any]) -> None:
-        # Callback queries → queue
+        # Callback queries
         cb = update.get("callback_query")
         if cb:
             user_id = cb.get("from", {}).get("id", "")
             if not self._is_allowed(user_id):
                 return
-            self.answer_callback_query(cb["id"], text=cb["data"])
-            self._callback_queue.put(cb["data"])
+            data = cb.get("data", "")
+
+            # Route actionable callbacks as synthetic commands
+            if data.startswith("resume:") and self._message_handler:
+                session_prefix = data[len("resume:"):]
+                self.answer_callback_query(cb["id"], text="Resuming…")
+                result = self._message_handler(f"/resume {session_prefix}")
+                if result == "SESSION_END":
+                    self._listener_running = False
+                return
+
+            self.answer_callback_query(cb["id"], text=data)
+            self._callback_queue.put(data)
             return
 
         # Text messages
