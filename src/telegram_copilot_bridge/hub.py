@@ -89,6 +89,12 @@ def _run_hub_locked(
         allowed_users=cfg.allowed_users,
     )
 
+    # Allow .env to override timeout when CLI default (0) is used
+    if timeout_minutes <= 0:
+        env_timeout = os.environ.get("HUB_TIMEOUT_MINUTES", "")
+        if env_timeout.strip().isdigit() and int(env_timeout.strip()) > 0:
+            timeout_minutes = int(env_timeout.strip())
+
     copilot_cmd = os.environ.get("COPILOT_CLI_PATH", "copilot")
     allowed_tools_str = os.environ.get("COPILOT_ALLOWED_TOOLS", "")
     allowed_tools = (
@@ -108,12 +114,17 @@ def _run_hub_locked(
 
     dirs_root = os.environ.get("COPILOT_DIRS_ROOT", "")
 
+    # Copilot response timeout (default 30 min), configurable via env var
+    response_timeout_minutes = int(os.environ.get("COPILOT_RESPONSE_TIMEOUT_MINUTES", "30"))
+    response_timeout_seconds = response_timeout_minutes * 60.0
+
     # Create BotCommander first to get its permission handler
     commander = BotCommander(
         session_mgr=None,  # type: ignore[arg-type]  # set below
         telegram=client,
         default_cwd=default_cwd or os.getcwd(),
         dirs_root=dirs_root or None,
+        prompt_timeout_seconds=response_timeout_seconds,
     )
 
     # Use Telegram-based permission handler unless autopilot is on
@@ -128,6 +139,26 @@ def _run_hub_locked(
         permission_handler=permission_handler,
     )
     commander._mgr = mgr
+
+    # Register bot commands for Telegram command menu
+    try:
+        client.set_my_commands([
+            {"command": "new", "description": "新しい Copilot セッション"},
+            {"command": "history", "description": "過去のセッション一覧"},
+            {"command": "resume", "description": "過去のセッションを再開"},
+            {"command": "dirs", "description": "ディレクトリ閲覧"},
+            {"command": "model", "description": "AI モデルの表示/変更"},
+            {"command": "mode", "description": "autopilot/manual 切替"},
+            {"command": "list", "description": "アクティブセッション一覧"},
+            {"command": "switch", "description": "セッション切替"},
+            {"command": "status", "description": "セッション状態"},
+            {"command": "stop", "description": "セッション停止"},
+            {"command": "last", "description": "最後の応答を再表示"},
+            {"command": "done", "description": "全停止・終了"},
+            {"command": "help", "description": "ヘルプ表示"},
+        ])
+    except Exception:
+        logger.warning("Failed to register bot commands", exc_info=True)
 
     mode_label = "🤖 Autopilot" if copilot_autopilot else "🔐 Manual approval"
     model_label = copilot_model or "default"

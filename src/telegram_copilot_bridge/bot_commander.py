@@ -42,11 +42,13 @@ class BotCommander:
         telegram: TelegramClient,
         default_cwd: str | None = None,
         dirs_root: str | None = None,
+        prompt_timeout_seconds: float = 1800.0,
     ) -> None:
         self._mgr = session_mgr
         self._tg = telegram
         self._default_cwd = default_cwd or os.getcwd()
         self._dirs_root = dirs_root or ""
+        self._prompt_timeout = prompt_timeout_seconds
         self._last_response: str | None = None
         self._waiting_for_user_input = False
         self._user_input_queue: queue.Queue[str] = queue.Queue()
@@ -231,8 +233,32 @@ class BotCommander:
         return None
 
     def _cmd_list(self, _arg: str) -> str | None:
-        report = self._mgr.get_list_report()
-        self._reply(report)
+        sessions = self._mgr.list_sessions()
+        if not sessions:
+            self._reply("ℹ️ No active sessions. Use /new to create one.")
+            return None
+
+        active_id = self._mgr.active_session.id if self._mgr.active_session else None
+
+        lines = [f"<b>📋 Sessions ({len(sessions)})</b>"]
+        buttons: list[list[dict[str, str]]] = []
+        for s in sessions:
+            is_active = s.id == active_id
+            active_mark = "👉 " if is_active else "   "
+            proc_icon = "🟢" if self._mgr.is_alive(s.id) else "🔴"
+            lines.append(
+                f"{active_mark}{proc_icon} <code>{s.id[:8]}</code> {s.state_icon}"
+                f" | {s.model} | {s.cwd} | {s.prompt_count} prompts"
+            )
+            if not is_active:
+                label = f"👉 Switch → {s.id[:8]}"
+                buttons.append([{"text": label, "callback_data": f"switch:{s.id[:8]}"}])
+
+        text = "\n".join(lines)
+        if buttons:
+            self._tg.send_inline_keyboard(text, buttons)
+        else:
+            self._reply(text)
         return None
 
     def _cmd_history(self, arg: str) -> str | None:
@@ -452,7 +478,7 @@ class BotCommander:
         """
         try:
             while True:
-                result = self._mgr.send_prompt(text, timeout=300.0)
+                result = self._mgr.send_prompt(text, timeout=self._prompt_timeout)
                 response_text = result.text or "(empty response)"
                 self._last_response = response_text
 
@@ -460,7 +486,7 @@ class BotCommander:
                     self._send_long_message(html.escape(response_text))
                     self._reply("⌨️ Copilot is waiting for your input.")
 
-                    user_input = self._wait_for_user_input(timeout=300)
+                    user_input = self._wait_for_user_input(timeout=int(self._prompt_timeout))
                     if user_input is None:
                         self._reply("⏰ Input timed out.")
                         break
@@ -473,7 +499,8 @@ class BotCommander:
                 self._send_long_message(html.escape(response_text))
                 break
         except TimeoutError:
-            self._reply("⏰ Copilot response timed out after 5 minutes.")
+            timeout_min = int(self._prompt_timeout / 60)
+            self._reply(f"⏰ Copilot response timed out after {timeout_min} minutes.")
         except Exception as e:
             logger.exception("Prompt execution failed")
             self._reply(f"❌ Error:\n<pre>{html.escape(str(e))}</pre>")

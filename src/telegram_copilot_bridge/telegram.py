@@ -103,6 +103,17 @@ class TelegramClient:
             data["text"] = text
         return self._call("answerCallbackQuery", data)
 
+    def set_my_commands(self, commands: list[dict[str, str]]) -> dict[str, Any]:
+        """Register bot commands for the Telegram command menu.
+
+        Args:
+            commands: List of dicts with 'command' and 'description' keys.
+        """
+        return self._call(
+            "setMyCommands",
+            {"commands": json.dumps(commands)},
+        )
+
     # ------------------------------------------------------------------
     # Receive methods (long-polling)
     # ------------------------------------------------------------------
@@ -265,6 +276,14 @@ class TelegramClient:
                 cwd_path = data[len("newcwd:"):]
                 self.answer_callback_query(cb["id"], text="Creating session…")
                 result = self._message_handler(f"/new {cwd_path}")
+                if result == "SESSION_END":
+                    self._listener_running = False
+                return
+
+            if data.startswith("switch:") and self._message_handler:
+                session_prefix = data[len("switch:"):]
+                self.answer_callback_query(cb["id"], text="Switching…")
+                result = self._message_handler(f"/switch {session_prefix}")
                 if result == "SESSION_END":
                     self._listener_running = False
                 return

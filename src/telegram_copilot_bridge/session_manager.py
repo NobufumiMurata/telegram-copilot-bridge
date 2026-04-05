@@ -215,6 +215,11 @@ class SessionManager:
         """Return all active sessions."""
         return list(self._sessions.values())
 
+    def is_alive(self, session_id: str) -> bool:
+        """Return True if the process for *session_id* is running."""
+        proc = self._processes.get(session_id)
+        return proc is not None and proc.alive
+
     # ------------------------------------------------------------------
     # External session discovery
     # ------------------------------------------------------------------
@@ -406,6 +411,8 @@ class SessionManager:
 
     def get_status(self, session_id: str | None = None) -> str:
         """Return an HTML status report."""
+        from pathlib import Path
+
         sid = session_id or self._active_session_id
         if not sid or sid not in self._sessions:
             return "ℹ️ No active session."
@@ -415,14 +422,41 @@ class SessionManager:
         alive = "✅ running" if proc and proc.alive else "❌ stopped"
         is_active = "👉 " if sid == self._active_session_id else ""
 
-        elapsed = datetime.now(timezone.utc) - s.created_at
+        now = datetime.now(timezone.utc)
+        elapsed = now - s.created_at
         hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
+
+        # Infer activity state from events.jsonl mtime
+        events_file = Path.home() / ".copilot" / "session-state" / sid / "events.jsonl"
+        activity_line = ""
+        if events_file.is_file():
+            try:
+                mtime = datetime.fromtimestamp(
+                    events_file.stat().st_mtime, tz=timezone.utc
+                )
+                idle_secs = int((now - mtime).total_seconds())
+                if idle_secs < 5:
+                    activity_label = "🔥 Active (just now)"
+                elif idle_secs < 60:
+                    activity_label = f"⚡ Active ({idle_secs}s ago)"
+                elif idle_secs < 300:
+                    activity_label = f"🟡 Idle ({idle_secs // 60}m ago)"
+                else:
+                    idle_m = idle_secs // 60
+                    activity_label = f"💤 Idle ({idle_m}m ago)"
+                last_ts = mtime.strftime("%H:%M:%S UTC")
+                activity_line = f"Activity: {activity_label} | last write {last_ts}"
+            except Exception:
+                activity_line = "Activity: ❓ (cannot read events.jsonl)"
+        else:
+            activity_line = "Activity: ❓ (no events.jsonl)"
 
         lines = [
             f"<b>🤖 Session {is_active}{s.id[:8]}</b>",
             f"Process: {alive}",
             f"State: {s.state_label}",
+            activity_line,
             f"Model: <code>{s.model}</code>",
             f"Mode: {s.mode}",
             f"CWD: <code>{s.cwd}</code>",
@@ -448,7 +482,8 @@ class SessionManager:
         lines.append("\nUse /switch &lt;id&gt; to change active session.")
         return "\n".join(lines)
 
-    def get_last_response(self, session_id: str | None = None) -> str | None:
+
+    def get_last_response(self, session_id: str | None = None) -> str | None:
         """Return the last assistant response from a session.
 
         Reads the session's ``events.jsonl`` (Copilot CLI persisted log)
