@@ -118,6 +118,9 @@ def _run_hub_locked(
     response_timeout_minutes = int(os.environ.get("COPILOT_RESPONSE_TIMEOUT_MINUTES", "30"))
     response_timeout_seconds = response_timeout_minutes * 60.0
 
+    # Permission approval timeout (default 5 min)
+    permission_timeout_seconds = int(os.environ.get("COPILOT_PERMISSION_TIMEOUT_SECONDS", "300"))
+
     # Create BotCommander first to get its permission handler
     commander = BotCommander(
         session_mgr=None,  # type: ignore[arg-type]  # set below
@@ -125,6 +128,7 @@ def _run_hub_locked(
         default_cwd=default_cwd or os.getcwd(),
         dirs_root=dirs_root or None,
         prompt_timeout_seconds=response_timeout_seconds,
+        permission_timeout_seconds=permission_timeout_seconds,
     )
 
     # Use Telegram-based permission handler unless autopilot is on

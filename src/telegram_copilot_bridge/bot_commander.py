@@ -43,12 +43,14 @@ class BotCommander:
         default_cwd: str | None = None,
         dirs_root: str | None = None,
         prompt_timeout_seconds: float = 1800.0,
+        permission_timeout_seconds: float = 300.0,
     ) -> None:
         self._mgr = session_mgr
         self._tg = telegram
         self._default_cwd = default_cwd or os.getcwd()
         self._dirs_root = dirs_root or ""
         self._prompt_timeout = prompt_timeout_seconds
+        self._permission_timeout = permission_timeout_seconds
         self._last_response: str | None = None
         self._waiting_for_user_input = False
         self._user_input_queue: queue.Queue[str] = queue.Queue()
@@ -91,7 +93,7 @@ class BotCommander:
         try:
             self._tg.send_inline_keyboard(message, buttons)
             # Wait for callback — 2 min timeout for permission decisions
-            result = self._tg.wait_for_callback(timeout_seconds=120)
+            result = self._tg.wait_for_callback(timeout_seconds=int(self._permission_timeout))
             if result is None:
                 logger.warning("Permission request timed out, denying")
                 self._reply("⏰ Permission timed out — denied.")

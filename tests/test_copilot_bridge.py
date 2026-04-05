@@ -226,6 +226,12 @@ class TestCopilotProcess:
         proc.set_notification_handler(handler)
         assert proc._on_notification is handler
 
+    def test_set_permission_handler(self):
+        proc = self._make_process()
+        handler = MagicMock(return_value="allow_once")
+        proc.set_permission_handler(handler)
+        assert proc._on_permission_request is handler
+
     def test_list_sessions(self):
         proc = self._make_process()
         response = ACPResponse(
@@ -234,3 +240,232 @@ class TestCopilotProcess:
         proc._request = lambda method, params, timeout=10.0: response
         sessions = proc.list_sessions()
         assert len(sessions) == 2
+
+
+class TestPermissionHandling:
+    """Tests for ACP session/request_permission handling."""
+
+    def _make_process(self):
+        proc = CopilotProcess.__new__(CopilotProcess)
+        proc._cmd = "copilot"
+        proc._allowed_tools = ["read"]
+        proc._autopilot = False
+        proc._proc = None
+        proc._msg_id = 0
+        proc._lock = threading.Lock()
+        proc._pending = {}
+        proc._on_notification = None
+        proc._on_permission_request = None
+        proc._reader_thread = None
+        proc._running = False
+        return proc
+
+    def test_handle_permission_auto_allows_without_handler(self):
+        """Without a permission handler, defaults to allow_once."""
+        proc = self._make_process()
+        proc._running = True
+        mock_popen = MagicMock()
+        mock_popen.poll.return_value = None
+        mock_popen.stdin = MagicMock()
+        proc._proc = mock_popen
+
+        proc._handle_permission_request(42, {
+            "toolCall": {"title": "Run bash command"},
+            "options": [
+                {"optionId": "allow_once", "name": "Allow once"},
+                {"optionId": "reject_once", "name": "Deny"},
+            ],
+        })
+
+        # Should have written a response to stdin
+        mock_popen.stdin.write.assert_called_once()
+        written = mock_popen.stdin.write.call_args[0][0]
+        response = json.loads(written.decode("utf-8"))
+        assert response["id"] == 42
+        assert response["result"]["optionId"] == "allow_once"
+
+    def test_handle_permission_calls_handler(self):
+        """When a handler is registered, it's called and its result is used."""
+        proc = self._make_process()
+        proc._running = True
+        mock_popen = MagicMock()
+        mock_popen.poll.return_value = None
+        mock_popen.stdin = MagicMock()
+        proc._proc = mock_popen
+
+        handler = MagicMock(return_value="allow_always")
+        proc.set_permission_handler(handler)
+
+        params = {
+            "toolCall": {"title": "Edit file"},
+            "options": [
+                {"optionId": "allow_once", "name": "Allow once"},
+                {"optionId": "allow_always", "name": "Always allow"},
+                {"optionId": "reject_once", "name": "Deny"},
+            ],
+        }
+        proc._handle_permission_request(99, params)
+
+        handler.assert_called_once_with(params)
+        written = mock_popen.stdin.write.call_args[0][0]
+        response = json.loads(written.decode("utf-8"))
+        assert response["id"] == 99
+        assert response["result"]["optionId"] == "allow_always"
+
+    def test_handle_permission_handler_error_falls_back_to_allow(self):
+        """If the handler raises, falls back to allow_once."""
+        proc = self._make_process()
+        proc._running = True
+        mock_popen = MagicMock()
+        mock_popen.stdin = MagicMock()
+        proc._proc = mock_popen
+
+        handler = MagicMock(side_effect=RuntimeError("callback error"))
+        proc.set_permission_handler(handler)
+
+        proc._handle_permission_request(10, {
+            "toolCall": {"title": "dangerous op"},
+            "options": [],
+        })
+
+        written = mock_popen.stdin.write.call_args[0][0]
+        response = json.loads(written.decode("utf-8"))
+        assert response["result"]["optionId"] == "allow_once"
+
+    def test_handle_permission_sends_valid_jsonrpc(self):
+        """Response must be valid JSON-RPC 2.0."""
+        proc = self._make_process()
+        proc._running = True
+        mock_popen = MagicMock()
+        mock_popen.stdin = MagicMock()
+        proc._proc = mock_popen
+
+        proc._handle_permission_request(7, {
+            "toolCall": {"title": "test"},
+            "options": [],
+        })
+
+        written = mock_popen.stdin.write.call_args[0][0]
+        response = json.loads(written.decode("utf-8"))
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] == 7
+        assert "result" in response
+
+    def test_handle_permission_stdin_error_does_not_raise(self):
+        """If writing to stdin fails, should not propagate the exception."""
+        proc = self._make_process()
+        proc._running = True
+        mock_popen = MagicMock()
+        mock_popen.stdin = MagicMock()
+        mock_popen.stdin.write.side_effect = BrokenPipeError("pipe closed")
+        proc._proc = mock_popen
+
+        # Should not raise
+        proc._handle_permission_request(1, {
+            "toolCall": {"title": "test"},
+            "options": [],
+        })
+
+    def test_read_loop_dispatches_permission_request(self):
+        """_read_loop routes session/request_permission to the handler."""
+        proc = self._make_process()
+        proc._running = True
+
+        handler = MagicMock(return_value="reject_once")
+        proc.set_permission_handler(handler)
+
+        # Prepare a mock subprocess with permission request + EOF
+        permission_msg = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 50,
+            "method": "session/request_permission",
+            "params": {
+                "toolCall": {"title": "Run bash"},
+                "options": [{"optionId": "allow_once", "name": "Allow"}],
+            },
+        })
+
+        mock_popen = MagicMock()
+        mock_popen.stdin = MagicMock()
+        mock_popen.stdout = MagicMock()
+        mock_popen.stdout.readline = MagicMock(
+            side_effect=[
+                (permission_msg + "\n").encode("utf-8"),
+                b"",  # EOF — stops loop
+            ]
+        )
+        proc._proc = mock_popen
+
+        proc._read_loop()
+
+        handler.assert_called_once()
+        handler_params = handler.call_args[0][0]
+        assert handler_params["toolCall"]["title"] == "Run bash"
+
+        # Verify response was written
+        written = mock_popen.stdin.write.call_args[0][0]
+        response = json.loads(written.decode("utf-8"))
+        assert response["id"] == 50
+        assert response["result"]["optionId"] == "reject_once"
+
+    def test_read_loop_permission_not_confused_with_pending(self):
+        """Permission requests use server-generated IDs, not in _pending."""
+        proc = self._make_process()
+        proc._running = True
+
+        # Register a pending request with a different id
+        event = threading.Event()
+        proc._pending[99] = (event, [])
+
+        permission_msg = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 50,
+            "method": "session/request_permission",
+            "params": {"toolCall": {"title": "test"}, "options": []},
+        })
+
+        mock_popen = MagicMock()
+        mock_popen.stdin = MagicMock()
+        mock_popen.stdout = MagicMock()
+        mock_popen.stdout.readline = MagicMock(
+            side_effect=[
+                (permission_msg + "\n").encode("utf-8"),
+                b"",
+            ]
+        )
+        proc._proc = mock_popen
+
+        proc._read_loop()
+
+        # Permission response was sent (not routed to pending)
+        written = mock_popen.stdin.write.call_args[0][0]
+        response = json.loads(written.decode("utf-8"))
+        assert response["id"] == 50
+        # The pending[99] slot is untouched
+        assert len(proc._pending[99][1]) == 0
+
+    def test_start_autopilot_flags(self):
+        """Autopilot mode adds --no-ask-user and --autopilot flags."""
+        proc = CopilotProcess(copilot_cmd="copilot", autopilot=True)
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            mock_popen.return_value.poll.return_value = None
+            mock_popen.return_value.stdout = MagicMock()
+            proc.start()
+            cmd_args = mock_popen.call_args[0][0]
+            assert "--no-ask-user" in cmd_args
+            assert "--autopilot" in cmd_args
+            proc.stop()
+
+    def test_start_no_autopilot_flags(self):
+        """Non-autopilot mode does not include --no-ask-user / --autopilot."""
+        proc = CopilotProcess(copilot_cmd="copilot", autopilot=False)
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            mock_popen.return_value.poll.return_value = None
+            mock_popen.return_value.stdout = MagicMock()
+            proc.start()
+            cmd_args = mock_popen.call_args[0][0]
+            assert "--no-ask-user" not in cmd_args
+            assert "--autopilot" not in cmd_args
+            proc.stop()

@@ -503,3 +503,219 @@ class TestNewFolderPicker:
         cmd.handle("/new")
         msg = tg.send_message.call_args[0][0]
         assert "No subdirectories" in msg
+
+
+class TestPermissionHandler:
+    """Tests for BotCommander permission request handling."""
+
+    def test_get_permission_handler_returns_callable(self):
+        cmd, mgr, tg = _make_commander()
+        handler = cmd.get_permission_handler()
+        assert callable(handler)
+
+    def test_permission_sends_inline_keyboard(self):
+        """Permission request sends Telegram inline keyboard."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_once"
+
+        result = cmd._handle_permission_request({
+            "toolCall": {"title": "Run bash command", "rawInput": {"command": "ls -la"}},
+            "options": [
+                {"optionId": "allow_once", "name": "Allow once"},
+                {"optionId": "allow_always", "name": "Always allow"},
+                {"optionId": "reject_once", "name": "Deny"},
+            ],
+        })
+
+        assert result == "allow_once"
+        tg.send_inline_keyboard.assert_called_once()
+        msg = tg.send_inline_keyboard.call_args[0][0]
+        buttons = tg.send_inline_keyboard.call_args[0][1]
+        assert "Permission Request" in msg
+        assert "Run bash command" in msg
+        assert "ls -la" in msg
+        assert len(buttons[0]) == 3
+
+    def test_permission_returns_user_choice(self):
+        """Returns whatever optionId the user clicks."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_always"
+
+        result = cmd._handle_permission_request({
+            "toolCall": {"title": "Edit file"},
+            "options": [
+                {"optionId": "allow_once", "name": "Allow once"},
+                {"optionId": "allow_always", "name": "Always allow"},
+            ],
+        })
+
+        assert result == "allow_always"
+
+    def test_permission_timeout_returns_reject(self):
+        """Timeout returns reject_once."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = None
+
+        result = cmd._handle_permission_request({
+            "toolCall": {"title": "Some action"},
+            "options": [{"optionId": "allow_once", "name": "Allow"}],
+        })
+
+        assert result == "reject_once"
+        # Should notify the user about timeout
+        tg.send_message.assert_called()
+        msg = tg.send_message.call_args[0][0]
+        assert "timed out" in msg.lower()
+
+    def test_permission_exception_returns_reject(self):
+        """On exception, returns reject_once."""
+        cmd, mgr, tg = _make_commander()
+        tg.send_inline_keyboard.side_effect = RuntimeError("network error")
+
+        result = cmd._handle_permission_request({
+            "toolCall": {"title": "action"},
+            "options": [],
+        })
+
+        assert result == "reject_once"
+
+    def test_permission_sets_state_to_pending_then_processing(self):
+        """State transitions: → PERMISSION_PENDING → PROCESSING."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_once"
+
+        state_calls = []
+        mgr.set_session_state.side_effect = lambda s: state_calls.append(s)
+
+        cmd._handle_permission_request({
+            "toolCall": {"title": "test"},
+            "options": [{"optionId": "allow_once", "name": "Allow"}],
+        })
+
+        assert state_calls[0] == SessionState.PERMISSION_PENDING
+        assert state_calls[-1] == SessionState.PROCESSING
+
+    def test_permission_state_restored_on_timeout(self):
+        """State returns to PROCESSING even on timeout."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = None
+
+        state_calls = []
+        mgr.set_session_state.side_effect = lambda s: state_calls.append(s)
+
+        cmd._handle_permission_request({
+            "toolCall": {"title": "test"},
+            "options": [],
+        })
+
+        assert state_calls[0] == SessionState.PERMISSION_PENDING
+        assert state_calls[-1] == SessionState.PROCESSING
+
+    def test_permission_state_restored_on_error(self):
+        """State returns to PROCESSING even on exception."""
+        cmd, mgr, tg = _make_commander()
+        tg.send_inline_keyboard.side_effect = RuntimeError("fail")
+
+        state_calls = []
+        mgr.set_session_state.side_effect = lambda s: state_calls.append(s)
+
+        cmd._handle_permission_request({
+            "toolCall": {"title": "test"},
+            "options": [],
+        })
+
+        assert state_calls[0] == SessionState.PERMISSION_PENDING
+        assert state_calls[-1] == SessionState.PROCESSING
+
+    def test_permission_default_options_when_empty(self):
+        """Provides default buttons when ACP sends no options."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_once"
+
+        cmd._handle_permission_request({
+            "toolCall": {"title": "test"},
+            "options": [],
+        })
+
+        buttons = tg.send_inline_keyboard.call_args[0][1]
+        option_ids = [b["callback_data"] for b in buttons[0]]
+        assert "allow_once" in option_ids
+        assert "reject_once" in option_ids
+
+    def test_permission_shows_description_when_no_command(self):
+        """Falls back to description when no command is present."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_once"
+
+        cmd._handle_permission_request({
+            "toolCall": {
+                "title": "Read file",
+                "rawInput": {"description": "Read src/main.py"},
+            },
+            "options": [{"optionId": "allow_once", "name": "Allow"}],
+        })
+
+        msg = tg.send_inline_keyboard.call_args[0][0]
+        assert "Read src/main.py" in msg
+
+    def test_permission_escapes_html(self):
+        """Ensures HTML special characters are escaped."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_once"
+
+        cmd._handle_permission_request({
+            "toolCall": {
+                "title": "Run <script>alert(1)</script>",
+                "rawInput": {"command": "echo '<b>bold</b>'"},
+            },
+            "options": [{"optionId": "allow_once", "name": "Allow"}],
+        })
+
+        msg = tg.send_inline_keyboard.call_args[0][0]
+        assert "&lt;script&gt;" in msg
+        assert "&lt;b&gt;bold&lt;/b&gt;" in msg
+
+    def test_permission_limits_buttons_to_three(self):
+        """Telegram inline row supports max 3 buttons."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_once"
+
+        cmd._handle_permission_request({
+            "toolCall": {"title": "test"},
+            "options": [
+                {"optionId": f"opt{i}", "name": f"Opt {i}"}
+                for i in range(5)
+            ],
+        })
+
+        buttons = tg.send_inline_keyboard.call_args[0][1]
+        assert len(buttons[0]) == 3
+
+    def test_permission_uses_default_timeout(self):
+        """Default timeout is 300 seconds (5 min)."""
+        cmd, mgr, tg = _make_commander()
+        tg.wait_for_callback.return_value = "allow_once"
+
+        cmd._handle_permission_request({
+            "toolCall": {"title": "test"},
+            "options": [{"optionId": "allow_once", "name": "Allow"}],
+        })
+
+        tg.wait_for_callback.assert_called_once_with(timeout_seconds=300)
+
+    def test_permission_uses_custom_timeout(self):
+        """Custom timeout is passed through to wait_for_callback."""
+        mgr = MagicMock()
+        tg = MagicMock()
+        cmd = BotCommander(
+            session_mgr=mgr, telegram=tg, default_cwd="/tmp",
+            permission_timeout_seconds=600,
+        )
+        tg.wait_for_callback.return_value = "allow_once"
+
+        cmd._handle_permission_request({
+            "toolCall": {"title": "test"},
+            "options": [{"optionId": "allow_once", "name": "Allow"}],
+        })
+
+        tg.wait_for_callback.assert_called_once_with(timeout_seconds=600)

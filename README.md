@@ -153,6 +153,7 @@ All variables can be set in `.env` or in the shell. Shell values take priority.
 | `COPILOT_DIRS_ROOT` | Root directory for `/dirs` and `/new` folder picker | (uses --cwd) |
 | `COPILOT_ALLOWED_DIRS` | Comma-separated allowed working dirs | (any) |
 | `COPILOT_ALLOWED_TOOLS` | Comma-separated tools to allow | `shell(git),read,write` |
+| `COPILOT_PERMISSION_TIMEOUT_SECONDS` | Permission approval timeout (seconds) | `300` (5 min) |
 | `HUB_LOCK_PORT` | TCP port for singleton lock | `47732` |
 
 ## Security

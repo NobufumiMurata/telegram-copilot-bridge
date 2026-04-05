@@ -428,3 +428,76 @@ class TestSessionManager:
         mgr = SessionManager()
         result = mgr.get_last_response()
         assert result is None
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_permission_handler_passed_to_process(self, MockCP, mock_find):
+        """Permission handler is registered on new CopilotProcess instances."""
+        mock_proc = _mock_copilot_process()
+        MockCP.return_value = mock_proc
+
+        handler = lambda params: "allow_once"
+        mgr = SessionManager(permission_handler=handler)
+        mgr.create_session("/tmp/project")
+
+        mock_proc.set_permission_handler.assert_called_once_with(handler)
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_no_permission_handler_when_none(self, MockCP, mock_find):
+        """No handler is set when permission_handler is None."""
+        mock_proc = _mock_copilot_process()
+        MockCP.return_value = mock_proc
+
+        mgr = SessionManager(permission_handler=None)
+        mgr.create_session("/tmp/project")
+
+        mock_proc.set_permission_handler.assert_not_called()
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_autopilot_flag_passed_to_process(self, MockCP, mock_find):
+        """Autopilot flag is forwarded to CopilotProcess."""
+        mock_proc = _mock_copilot_process()
+        MockCP.return_value = mock_proc
+
+        mgr = SessionManager(autopilot=True)
+        mgr.create_session("/tmp/project")
+
+        MockCP.assert_called_once_with(
+            copilot_cmd="copilot",
+            allowed_tools=None,
+            model=None,
+            autopilot=True,
+        )
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_permission_handler_on_resume(self, MockCP, mock_find):
+        """Permission handler is registered on resumed session processes."""
+        discover_proc = _mock_copilot_process()
+        discover_proc.list_sessions.return_value = [
+            {"sessionId": "ext-aaa-111", "cwd": "/tmp/ext", "title": "Old"},
+        ]
+        resume_proc = _mock_copilot_process()
+        resume_proc.load_session.return_value = {
+            "models": {"currentModelId": "opus"},
+            "modes": {"currentModeId": "#agent"},
+        }
+        MockCP.side_effect = [discover_proc, resume_proc]
+
+        handler = lambda params: "reject_once"
+        mgr = SessionManager(permission_handler=handler)
+        mgr.resume_session("ext-aaa")
+
+        resume_proc.set_permission_handler.assert_called_once_with(handler)
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_autopilot_toggle(self, MockCP, mock_find):
+        """Autopilot property can be toggled."""
+        mgr = SessionManager(autopilot=False)
+        assert mgr.autopilot is False
+
+        mgr.autopilot = True
+        assert mgr.autopilot is True
