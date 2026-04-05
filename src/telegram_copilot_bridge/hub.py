@@ -136,9 +136,10 @@ def _run_hub_locked(
         "🤖 <b>Copilot Remote Control</b>\n\n"
         f"Model: <code>{model_label}</code>\n"
         f"Mode: {mode_label}\n"
-        "Send <code>/new</code> to start a session, "
-        "or <code>/help</code> for all commands.\n"
-        f"Timeout: {timeout_label}."
+        f"Timeout: {timeout_label}\n\n"
+        "/new — Start a new session\n"
+        "/history — Browse past sessions\n"
+        "/help — Show all commands"
     )
 
     client.start_listener(message_handler=commander.handle)

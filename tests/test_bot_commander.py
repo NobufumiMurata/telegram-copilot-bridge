@@ -182,6 +182,37 @@ class TestHistoryResume:
         msg = tg.send_message.call_args[0][0]
         assert "/history" in msg
         assert "/resume" in msg
+        assert "/last" in msg
+
+
+class TestLastCommand:
+    def test_last_no_response(self):
+        cmd, mgr, tg = _make_commander()
+        cmd.handle("/last")
+        msg = tg.send_message.call_args[0][0]
+        assert "No previous response" in msg
+
+    def test_last_shows_previous_response(self):
+        cmd, mgr, tg = _make_commander()
+        session = Session(id="abc", cwd="/tmp", model="m", mode="a")
+        type(mgr).active_session = PropertyMock(return_value=session)
+        mgr.send_prompt.return_value = MagicMock(text="Here is the fix.")
+
+        cmd.handle("Fix the bug")
+        _wait_prompt_done(cmd)
+        tg.reset_mock()
+
+        cmd.handle("/last")
+        msg = tg.send_message.call_args[0][0]
+        assert "Here is the fix." in msg
+
+    def test_last_escapes_html(self):
+        cmd, mgr, tg = _make_commander()
+        cmd._last_response = "Use <div> & <span>"
+        cmd.handle("/last")
+        msg = tg.send_message.call_args[0][0]
+        assert "&lt;div&gt;" in msg
+        assert "&amp;" in msg
 
 
 class TestHandlePrompt:

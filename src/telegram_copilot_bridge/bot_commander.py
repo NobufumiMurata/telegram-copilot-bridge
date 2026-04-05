@@ -46,6 +46,7 @@ class BotCommander:
         self._default_cwd = default_cwd or os.getcwd()
         self._dirs_root = dirs_root or ""
         self._prompt_in_progress = False
+        self._last_response: str | None = None
 
     def get_permission_handler(self) -> Callable[[dict[str, Any]], str]:
         """Return a permission handler that uses Telegram inline buttons."""
@@ -135,6 +136,7 @@ class BotCommander:
             "/model": self._cmd_model,
             "/mode": self._cmd_mode,
             "/help": self._cmd_help,
+            "/last": self._cmd_last,
         }
 
         handler = handlers.get(cmd)
@@ -369,6 +371,14 @@ class BotCommander:
         self._reply(f"Mode: {label}\n⚠️ Applies to new sessions only.")
         return None
 
+    def _cmd_last(self, _arg: str) -> str | None:
+        """Re-send the last Copilot response."""
+        if self._last_response is None:
+            self._reply("ℹ️ No previous response yet.")
+            return None
+        self._send_long_message(html.escape(self._last_response))
+        return None
+
     def _cmd_help(self, _arg: str) -> str | None:
         autopilot_label = "🤖 autopilot" if self._mgr.autopilot else "🔐 manual"
         model_label = self._mgr.model or "default"
@@ -384,6 +394,7 @@ class BotCommander:
             "/switch &lt;id&gt;  — Switch active session\n"
             "/status        — Session status\n"
             "/stop [id]     — Stop a session\n"
+            "/last          — Show last response\n"
             "/done          — Stop all & exit\n"
             "/help          — This message\n"
             "\n(any text)     — Send as prompt\n"
@@ -420,6 +431,7 @@ class BotCommander:
         try:
             result = self._mgr.send_prompt(text, timeout=300.0)
             response_text = result.text or "(empty response)"
+            self._last_response = response_text
             # Copilot returns Markdown — escape HTML entities so Telegram
             # doesn't choke on unmatched < > & characters.
             self._send_long_message(html.escape(response_text))
