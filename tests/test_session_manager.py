@@ -289,23 +289,42 @@ class TestSessionManager:
                 "sessionId": "ext-aaa",
                 "cwd": "/tmp/a",
                 "title": "Old session",
-                "updatedAt": "2026-04-05T01:00:00.000Z",
+                "updatedAt": "2026-04-04T12:00:00.000Z",
             },
             {
                 "sessionId": "ext-bbb",
                 "cwd": "/tmp/b",
                 "title": "Another",
-                "updatedAt": "2026-04-04T12:00:00.000Z",
+                "updatedAt": "2026-04-05T01:00:00.000Z",
             },
         ]
         MockCP.return_value = discover_proc
 
         mgr = SessionManager()
         text, sessions = mgr.get_history_data()
-        assert "Session History (2)" in text
-        assert "ext-aaa" in text
+        # Default limit=3, both returned; sorted newest first
+        assert "latest 2/2" in text
         assert len(sessions) == 2
-        assert sessions[0]["sessionId"] == "ext-aaa"
+        assert sessions[0]["sessionId"] == "ext-bbb"  # newer
+        assert sessions[1]["sessionId"] == "ext-aaa"
+
+    @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
+    @patch("telegram_copilot_bridge.session_manager.CopilotProcess")
+    def test_get_history_data_with_limit(self, MockCP, mock_find):
+        discover_proc = _mock_copilot_process()
+        discover_proc.list_sessions.return_value = [
+            {"sessionId": "s1", "cwd": "/a", "title": "A", "updatedAt": "2026-04-01T00:00:00Z"},
+            {"sessionId": "s2", "cwd": "/b", "title": "B", "updatedAt": "2026-04-03T00:00:00Z"},
+            {"sessionId": "s3", "cwd": "/c", "title": "C", "updatedAt": "2026-04-02T00:00:00Z"},
+        ]
+        MockCP.return_value = discover_proc
+
+        mgr = SessionManager()
+        text, sessions = mgr.get_history_data(limit=2)
+        assert len(sessions) == 2
+        assert sessions[0]["sessionId"] == "s2"  # newest
+        assert sessions[1]["sessionId"] == "s3"
+        assert "1 more" in text
 
     @patch("telegram_copilot_bridge.session_manager._find_copilot", return_value="copilot")
     @patch("telegram_copilot_bridge.session_manager.CopilotProcess")

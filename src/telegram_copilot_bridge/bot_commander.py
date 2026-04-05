@@ -164,9 +164,12 @@ class BotCommander:
         self._reply(report)
         return None
 
-    def _cmd_history(self, _arg: str) -> str | None:
+    def _cmd_history(self, arg: str) -> str | None:
+        limit = 3
+        if arg.strip().isdigit():
+            limit = max(1, int(arg.strip()))
         self._reply("⏳ Discovering persisted sessions…")
-        text, sessions = self._mgr.get_history_data()
+        text, sessions = self._mgr.get_history_data(limit=limit)
         if sessions:
             buttons = []
             for s in sessions[:10]:
@@ -310,7 +313,7 @@ class BotCommander:
         self._reply(
             "<b>📖 Commands</b>\n"
             "/new [dir]     — New Copilot session\n"
-            "/history       — List past CLI sessions\n"
+            "/history [n]   — List past CLI sessions (default: 3)\n"
             "/resume &lt;id&gt;  — Resume a past session\n"
             "/dirs [dir]    — Browse directories\n"
             "/model [name]  — Show/set AI model\n"

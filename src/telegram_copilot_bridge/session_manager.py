@@ -271,9 +271,12 @@ class SessionManager:
         )
         return session
 
-    def get_history_data(self) -> tuple[str, list[dict[str, Any]]]:
+    def get_history_data(
+        self, limit: int = 3
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Return an HTML report and raw session list of persisted sessions.
 
+        *limit* controls how many sessions to return (most recent first).
         Returns ``(html_text, sessions_list)`` where *sessions_list* is the
         raw external session metadata (empty on error or no results).
         """
@@ -292,8 +295,14 @@ class SessionManager:
                 [],
             )
 
-        lines = [f"<b>📜 Session History ({len(external)})</b>"]
-        for s in external:
+        # Sort by updatedAt descending (newest first)
+        external.sort(key=lambda s: s.get("updatedAt", ""), reverse=True)
+        total = len(external)
+        shown = external[:limit]
+
+        header = f"<b>📜 Session History (latest {len(shown)}/{total})</b>"
+        lines = [header]
+        for s in shown:
             sid = s.get("sessionId", "?")
             cwd = s.get("cwd", "?").replace("\\\\", "\\")
             title = s.get("title", "")
@@ -306,11 +315,16 @@ class SessionManager:
                 f"\n      {ts_label}"
             )
             lines.append(line)
+        if total > limit:
+            lines.append(
+                f"\n📎 {total - limit} more — use"
+                f" <code>/history {total}</code> to show all"
+            )
         lines.append(
             "\n💡 Tap a session below to resume, or use"
             " <code>/resume &lt;id&gt;</code>"
         )
-        return ("\n".join(lines), external)
+        return ("\n".join(lines), shown)
 
     def get_history_report(self) -> str:
         """Return an HTML report of all persisted Copilot CLI sessions."""

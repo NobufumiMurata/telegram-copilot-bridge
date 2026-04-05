@@ -124,7 +124,7 @@ class TestHistoryResume:
         mgr.get_history_data.return_value = ("📜 Session History (2)", sessions)
 
         cmd.handle("/history")
-        # "Discovering…" via send_message, then report via send_inline_keyboard
+        mgr.get_history_data.assert_called_once_with(limit=3)
         tg.send_message.assert_called_once()
         tg.send_inline_keyboard.assert_called_once()
         text_arg = tg.send_inline_keyboard.call_args[0][0]
@@ -133,6 +133,15 @@ class TestHistoryResume:
         assert len(buttons_arg) == 2
         assert buttons_arg[0][0]["callback_data"] == "resume:ext-aaa-"
         assert buttons_arg[1][0]["callback_data"] == "resume:ext-bbb-"
+
+    def test_history_command_with_limit(self):
+        cmd, mgr, tg = _make_commander()
+        mgr.get_history_data.return_value = ("📜 Session History", [
+            {"sessionId": "ext-aaa-111", "cwd": "/tmp/a", "title": "S1"},
+        ])
+
+        cmd.handle("/history 10")
+        mgr.get_history_data.assert_called_once_with(limit=10)
 
     def test_history_command_no_sessions(self):
         cmd, mgr, tg = _make_commander()
