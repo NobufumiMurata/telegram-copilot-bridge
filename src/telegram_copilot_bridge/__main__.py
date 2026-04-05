@@ -35,8 +35,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--model",
-        default="",
-        help="AI model to use (e.g. claude-opus-4.6, claude-sonnet-4.6).",
+        default="claude-opus-4.6",
+        help="AI model to use (default: claude-opus-4.6).",
     )
     parser.add_argument(
         "--autopilot",
