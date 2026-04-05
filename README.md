@@ -159,7 +159,7 @@ All variables can be set in `.env` or in the shell. Shell values take priority.
 ## Security
 
 - **User allowlist**: Only messages from `TELEGRAM_ALLOWED_USERS` are accepted. All other users are silently ignored.
-- **Timeouts**: Configurable auto-shutdown timeout (default: no timeout). Permission requests timeout after 2 minutes.
+- **Timeouts**: Configurable auto-shutdown timeout (default: no timeout). Permission requests timeout after 5 minutes (configurable via `COPILOT_PERMISSION_TIMEOUT_SECONDS`).
 - **No secrets in repo**: All credentials via `.env` file or environment variables.
 - **Tool allowlist**: Uses `--allow-tool` (not `--allow-all-tools`) to restrict what Copilot CLI can do.
 - **Directory restrictions**: Restrict which directories Copilot sessions can operate in via `COPILOT_ALLOWED_DIRS`.

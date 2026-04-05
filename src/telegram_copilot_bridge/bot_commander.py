@@ -92,7 +92,7 @@ class BotCommander:
 
         try:
             self._tg.send_inline_keyboard(message, buttons)
-            # Wait for callback — 2 min timeout for permission decisions
+            # Wait for callback — permission timeout (default 5 min)
             result = self._tg.wait_for_callback(timeout_seconds=int(self._permission_timeout))
             if result is None:
                 logger.warning("Permission request timed out, denying")
