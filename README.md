@@ -161,11 +161,11 @@ All variables can be set in `.env` or in the shell. Shell values take priority.
 
 ## Limitations
 
-- **VS Code ローカル実行は監視不可** — VS Code 上の Copilot が何をしているかを取得する手段はありません。MCP ツールは VS Code → Bridge の一方向呼び出しのみです。
-- **Bridge 外で起動した CLI のステータスは取得不可** — サーバー上で直接 `copilot` を起動した場合、リアルタイムの実行状況は取れません。`/status` の Activity 表示（`events.jsonl` の更新時刻による推定）が代替手段です。
-- **Bridge 外で起動した CLI の承認リクエストは中継不可** — Hub 経由で起動したセッションのみ、ツール承認を Telegram インラインボタンで中継できます。
-- **シングルインスタンス制限** — Hub は 1 マシンにつき 1 プロセスのみ（TCP ポートロック）。
-- **Telegram メッセージ長制限** — 4000 文字を超える応答は自動分割されます。
+- **VS Code local runs are not observable** — There is no way to retrieve what Copilot is doing inside VS Code. MCP tools are one-way calls from VS Code → Bridge only.
+- **Status of CLI sessions started outside the Bridge is unavailable** — If you launch `copilot` directly on the server, real-time execution status cannot be tracked. The Activity display in `/status` (estimated from `events.jsonl` modification time) is the only alternative.
+- **Tool approval requests from CLI sessions started outside the Bridge cannot be relayed** — Only sessions launched via the Hub can relay tool approval requests through Telegram inline buttons.
+- **Single-instance restriction** — Only one Hub process per machine (TCP port lock).
+- **Telegram message length limit** — Responses exceeding 4000 characters are split automatically.
 
 ## License
 
